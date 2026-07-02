@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+{# Portal de valoración del turista — calificación 1-5 estrellas.              #}
+{# Mobile-first. La estrella elegida hace POST al mismo endpoint.              #}
+{# Contexto: config, idioma, textos (color, emoji, titulo, subtitulo,          #}
+{#           pregunta), error (bool opcional).                                  #}
+<html lang="{{ idioma }}">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <title>{{ textos.titulo }} — {{ config.organizacion.nombre }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .star-btn        { font-size: 3rem; line-height: 1; cursor: pointer;
+                       transition: transform .12s, filter .12s; user-select: none; }
+    .star-btn:active { transform: scale(.9); }
+    .star-btn.filled { filter: drop-shadow(0 0 8px #f59e0b); }
+    /* Gradientes de fondo por tipo de negocio */
+    .bg-tipo-HOTEL    { background: linear-gradient(160deg, #4338ca 0%, #3730a3 100%); }
+    .bg-tipo-TOUR     { background: linear-gradient(160deg, #047857 0%, #065f46 100%); }
+    .bg-tipo-TRANSFER { background: linear-gradient(160deg, #0369a1 0%, #075985 100%); }
+    .bg-tipo-ALQUILER { background: linear-gradient(160deg, #6d28d9 0%, #5b21b6 100%); }
+    .bg-tipo-RESTO    { background: linear-gradient(160deg, #c2410c 0%, #9a3412 100%); }
+    /* Colores del header de la tarjeta */
+    .card-header-HOTEL    { background: #4f46e5; }
+    .card-header-TOUR     { background: #059669; }
+    .card-header-TRANSFER { background: #0284c7; }
+    .card-header-ALQUILER { background: #7c3aed; }
+    .card-header-RESTO    { background: #ea580c; }
+  </style>
+</head>
+<body class="min-h-screen bg-tipo-{{ config.tipo_negocio }}
+             flex items-center justify-center p-4 font-sans">
+
+  <div class="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden">
+
+    {# Header con color y emoji por tipo de negocio #}
+    <div class="card-header-{{ config.tipo_negocio }} px-6 pt-8 pb-6 text-center">
+      <p class="text-white/60 text-xs tracking-widest uppercase mb-1">
+        Servicio de Feedback · DM Global
+      </p>
+      <div class="text-4xl my-2">{{ textos.emoji }}</div>
+      <h1 class="text-white text-xl font-bold leading-tight">
+        {{ config.organizacion.nombre }}
+      </h1>
+    </div>
+
+    {# Cuerpo #}
+    <div class="px-6 py-7 text-center">
+
+      {% if error %}
+      <div class="mb-5 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        {{ textos.error_rating }}
+      </div>
+      {% endif %}
+
+      <p class="text-gray-800 font-semibold text-lg mb-1">{{ textos.pregunta }}</p>
+      <p class="text-gray-400 text-sm mb-7">{{ textos.subtitulo }}</p>
+
+      <form id="form-rating" method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" id="campo-calificacion" name="calificacion" value=""/>
+
+        {# Grilla táctil de 5 estrellas #}
+        <div id="estrellas"
+             class="flex justify-center gap-1 mb-7"
+             role="group"
+             aria-label="{{ textos.pregunta }}">
+          {% for n in "12345" %}
+          <button type="button"
+                  class="star-btn"
+                  data-valor="{{ n }}"
+                  aria-label="{{ n }} {{ textos.emoji }}"
+                  onclick="elegirEstrella({{ n }})">
+            ☆
+          </button>
+          {% endfor %}
+        </div>
+
+        <div class="flex justify-between text-xs text-gray-400 -mt-5 mb-7 px-2">
+          <span>{{ textos.extremo_min }}</span>
+          <span>{{ textos.extremo_max }}</span>
+        </div>
+
+        <button type="submit" id="btn-enviar"
+                class="hidden w-full py-3.5 bg-amber-500 text-white text-sm font-bold
+                       rounded-2xl active:scale-95 transition-all shadow-sm shadow-amber-200">
+          {{ textos.btn_enviar }}
+        </button>
+      </form>
+    </div>
+
+    <div class="border-t border-gray-100 px-6 py-4 text-center">
+      <p class="text-xs text-gray-400">
+        {{ textos.aviso_privacidad }}
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let stellaElegida = 0;
+    const btns = document.querySelectorAll('.star-btn');
+
+    function elegirEstrella(valor) {
+      stellaElegida = valor;
+      document.getElementById('campo-calificacion').value = valor;
+      actualizarEstrellas(valor);
+      setTimeout(() => document.getElementById('form-rating').submit(), 380);
+    }
+
+    function actualizarEstrellas(hasta) {
+      btns.forEach((b, i) => {
+        const activo = i < hasta;
+        b.textContent = activo ? '★' : '☆';
+        b.style.color = activo ? '#f59e0b' : '#d1d5db';
+        b.classList.toggle('filled', activo);
+      });
+    }
+
+    btns.forEach((btn, i) => {
+      btn.addEventListener('mouseenter', () => actualizarEstrellas(i + 1));
+      btn.addEventListener('mouseleave', () => actualizarEstrellas(stellaElegida));
+    });
+  </script>
+
+</body>
+</html>

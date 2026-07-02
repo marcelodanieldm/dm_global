@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# Panel de Control — Servicio de Feedback                                     #}
+{# Contexto esperado:                                                           #}
+{#   organizacion      → Organizacion | None                                   #}
+{#   config_feedback   → ServicioFeedbackConfig | None                         #}
+{#   estados           → EstadoSuscripcion (TextChoices)                       #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>
+    {% if config_feedback %}
+      {{ config_feedback.organizacion.nombre }} — Panel de Feedback
+    {% else %}
+      Panel de Feedback · DM Global
+    {% endif %}
+  </title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-screen bg-gray-50 font-sans antialiased">
+
+{# ═══════════════════════════════════════════════════════════════════ HEADER #}
+<header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+
+    {# Logo + nombre de organización #}
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="shrink-0 w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77
+                   l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      </div>
+      <div class="min-w-0">
+        <p class="text-[10px] uppercase tracking-widest text-gray-400 leading-none">Servicio de Feedback</p>
+        <p class="text-sm font-semibold text-gray-900 truncate leading-tight">
+          {% if organizacion %}{{ organizacion.nombre }}{% else %}DM Global{% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 shrink-0">
+
+      {# ── Badge de estado de suscripción ── #}
+      {% if config_feedback %}
+        {% if config_feedback.estado_suscripcion == "ACTIVO" %}
+          <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                        text-xs font-semibold bg-green-100 text-green-800 ring-1 ring-green-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+            Activo
+          </span>
+        {% elif config_feedback.estado_suscripcion == "DEMO" %}
+          <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                        text-xs font-semibold bg-blue-100 text-blue-800 ring-1 ring-blue-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+            Demo
+          </span>
+        {% elif config_feedback.estado_suscripcion == "INACTIVO" %}
+          <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                        text-xs font-semibold bg-red-100 text-red-800 ring-1 ring-red-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+            Inactivo
+          </span>
+        {% endif %}
+      {% endif %}
+
+      {# ── Info de usuario autenticado + logout ── #}
+      {% if request.user.is_authenticated %}
+        <span class="hidden sm:block text-xs text-gray-500">
+          {{ request.user.get_full_name|default:request.user.username }}
+        </span>
+        <a href="{% url 'admin:logout' %}"
+           class="text-xs text-gray-400 hover:text-red-600 transition-colors">
+          Salir
+        </a>
+      {% endif %}
+
+    </div>
+  </div>
+</header>
+
+{# ══════════════════════════════════════════════════════════════════════ MAIN #}
+<main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+
+  {# ─────────────────────────────────────────────────────── CASO: SIN ORG ── #}
+  {% if not organizacion %}
+  <div class="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center">
+    <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+      <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71
+                 c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898
+                 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+      </svg>
+    </div>
+    <h2 class="text-base font-semibold text-gray-700">Sin organización asignada</h2>
+    <p class="mt-1 text-sm text-gray-400">
+      Tu cuenta no tiene una organización vinculada.<br>
+      Contactá al administrador del CRM DM Global para que te la asigne.
+    </p>
+  </div>
+
+  {# ──────────────────────────────────────────────── CASO: SIN SERVICIO ──── #}
+  {% elif not config_feedback %}
+  <div class="rounded-2xl border border-dashed border-indigo-200 bg-white p-10 text-center">
+    <div class="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mx-auto mb-4">
+      <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25
+                 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5
+                 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+      </svg>
+    </div>
+    <h2 class="text-base font-semibold text-gray-700">Servicio de Feedback no contratado</h2>
+    <p class="mt-1 text-sm text-gray-400">
+      <strong>{{ organizacion.nombre }}</strong> todavía no tiene activo el Servicio de Feedback.<br>
+      Comunicáte con DM Global para contratar el servicio.
+    </p>
+    <a href="mailto:soporte@dmglobal.com"
+       class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+      Contactar soporte ↗
+    </a>
+  </div>
+
+  {# ────────────────────────────────────────── CASO: SERVICIO CONFIGURADO ── #}
+  {% else %}
+
+    {# ══ Alerta de suscripción INACTIVA ══ #}
+    {% if config_feedback.estado_suscripcion == "INACTIVO" %}
+    <div class="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+      <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor"
+           stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-red-800">Suscripción suspendida</p>
+        <p class="text-xs text-red-600 mt-0.5">
+          El Servicio de Feedback está inactivo en el CRM DM Global.
+          Google Apps Script recibirá error 403 hasta que se reactive.
+        </p>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ══ Alerta de suscripción en DEMO ══ #}
+    {% if config_feedback.estado_suscripcion == "DEMO" %}
+    <div class="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor"
+           stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75
+                 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
+      </svg>
+      <p class="text-xs text-blue-700">
+        Estás en modo <strong>Demo</strong>. El servicio funciona con todas sus funciones
+        hasta que DM Global active tu suscripción definitiva.
+      </p>
+    </div>
+    {% endif %}
+
+    {# ══ Tarjeta 1: Credenciales para Google Sheets ══ #}
+    <section class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+        <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor"
+             stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026
+                   -1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659
+                   -1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
+        </svg>
+        <h2 class="text-sm font-semibold text-gray-800">Credenciales para Google Sheets</h2>
+      </div>
+
+      <div class="px-5 py-5 space-y-4">
+
+        {# ID del comercio (config.id) #}
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">
+            ID del comercio
+            <span class="ml-1 font-normal text-gray-400">(comercio_id en el Script)</span>
+          </label>
+          <div class="flex items-center gap-2">
+            <code id="val-comercio-id"
+                  class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2
+                         text-xs font-mono text-gray-700 select-all break-all">
+              {{ config_feedback.id }}
+            </code>
+            <button onclick="copiar('val-comercio-id', this)"
+                    class="shrink-0 px-3 py-2 bg-indigo-600 text-white text-xs font-medium
+                           rounded-xl hover:bg-indigo-700 active:scale-95 transition-all">
+              Copiar
+            </button>
+          </div>
+        </div>
+
+        {# API Token — oculto por defecto, toggle para revelar #}
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-medium text-gray-500">
+              API Token
+              <span class="ml-1 font-normal text-gray-400">(token en el Script)</span>
+            </label>
+            <button onclick="toggleToken()"
+                    id="btn-toggle-token"
+                    class="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">
+              Mostrar
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <code id="val-api-token"
+                  class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2
+                         text-xs font-mono text-gray-700 select-all break-all blur-sm
+                         transition-all duration-200"
+                  data-token="{{ config_feedback.api_token }}">
+              {{ config_feedback.api_token }}
+            </code>
+            <button onclick="copiar('val-api-token', this)"
+                    class="shrink-0 px-3 py-2 bg-indigo-600 text-white text-xs font-medium
+                           rounded-xl hover:bg-indigo-700 active:scale-95 transition-all">
+              Copiar
+            </button>
+          </div>
+        </div>
+
+        <p class="text-xs text-gray-400 leading-relaxed">
+          Pegá <strong class="text-gray-600">ID del comercio</strong> y
+          <strong class="text-gray-600">API Token</strong> en las constantes del Google Apps Script
+          tal como indicó DM Global.
+          <strong class="text-red-500">No los compartas públicamente.</strong>
+        </p>
+      </div>
+    </section>
+
+    {# ══ Tarjeta 2: Link de reseña Google ══ #}
+    {% if config_feedback.google_review_link %}
+    <section class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+        <svg class="w-4 h-4 text-yellow-500 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77
+                   l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        <h2 class="text-sm font-semibold text-gray-800">Link de reseña en Google Maps</h2>
+      </div>
+
+      <div class="px-5 py-5 flex flex-col sm:flex-row gap-5 items-start">
+
+        <div class="flex-1 min-w-0 space-y-3">
+          <div class="flex items-center gap-2">
+            <code id="val-review-link"
+                  class="flex-1 truncate bg-gray-50 border border-gray-200 rounded-xl
+                         px-3 py-2 text-xs font-mono text-gray-700">
+              {{ config_feedback.google_review_link }}
+            </code>
+            <button onclick="copiar('val-review-link', this)"
+                    class="shrink-0 px-3 py-2 bg-yellow-500 text-white text-xs font-medium
+                           rounded-xl hover:bg-yellow-600 active:scale-95 transition-all">
+              Copiar
+            </button>
+          </div>
+          <a href="{{ config_feedback.google_review_link }}"
+             target="_blank" rel="noopener noreferrer"
+             class="inline-flex items-center gap-1.5 text-xs font-medium
+                    text-indigo-600 hover:text-indigo-800 transition-colors">
+            Abrir en Google Maps
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25
+                       2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/>
+            </svg>
+          </a>
+        </div>
+
+        {# QR de la reseña — solo se envía la URL pública, nada sensible #}
+        <a href="{{ config_feedback.google_review_link }}"
+           target="_blank" rel="noopener noreferrer"
+           title="Escaneá para ir directo a la reseña">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=96x96&data={{ config_feedback.google_review_link|urlencode }}"
+               alt="QR reseña Google"
+               width="96" height="96"
+               class="rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow" />
+        </a>
+      </div>
+    </section>
+    {% endif %}
+
+    {# ══ Tarjeta 3: Google Sheet ══ #}
+    {% if config_feedback.google_sheet_url %}
+    <section class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+        <svg class="w-4 h-4 text-green-600 shrink-0" fill="none" stroke="currentColor"
+             stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375
+                   19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75.125V5.625m0 12.75V5.625
+                   m0 0a1.125 1.125 0 011.125-1.125H9.75M3.375 5.625h1.5C5.496 5.625 6
+                   6.129 6 6.75m0 0V18.375M6 6.75h9M6 18.375h9m0-11.625V18.375m0-11.625
+                   C15 6.129 15.504 5.625 16.125 5.625h3.25a1.125 1.125 0 011.125
+                   1.125v12.75a1.125 1.125 0 01-1.125 1.125h-3.25C15.504 19.5 15 18.996
+                   15 18.375z"/>
+        </svg>
+        <h2 class="text-sm font-semibold text-gray-800">Planilla de Google Sheets</h2>
+      </div>
+
+      <div class="px-5 py-4 flex items-center justify-between gap-4">
+        <p class="text-xs text-gray-500">
+          Hacé clic para abrir la planilla donde el script procesa las reseñas de
+          <strong>{{ config_feedback.organizacion.nombre }}</strong>.
+        </p>
+        <a href="{{ config_feedback.google_sheet_url }}"
+           target="_blank" rel="noopener noreferrer"
+           class="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white
+                  text-xs font-semibold rounded-xl hover:bg-green-700
+                  active:scale-95 transition-all shadow-sm">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25
+                     2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/>
+          </svg>
+          Abrir Google Sheet
+        </a>
+      </div>
+    </section>
+    {% else %}
+    {# Google Sheet no configurado todavía #}
+    <div class="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-4
+                flex items-center gap-3 text-gray-400 text-xs">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      Planilla de Google Sheets no configurada todavía.
+      El administrador de DM Global la agregará al activar el servicio.
+    </div>
+    {% endif %}
+
+    {# ══ Tarjeta 4: Datos del servicio ══ #}
+    <section class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="text-sm font-semibold text-gray-800">Información del servicio</h2>
+      </div>
+      <dl class="divide-y divide-gray-100 text-sm">
+
+        <div class="px-5 py-3 grid grid-cols-2">
+          <dt class="text-gray-400">Tipo de negocio</dt>
+          {# get_tipo_negocio_display devuelve el label legible del TextChoices #}
+          <dd class="font-medium text-gray-800">{{ config_feedback.get_tipo_negocio_display }}</dd>
+        </div>
+
+        <div class="px-5 py-3 grid grid-cols-2">
+          <dt class="text-gray-400">Estado</dt>
+          <dd>
+            {% if config_feedback.estado_suscripcion == "ACTIVO" %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
+                           font-semibold bg-green-100 text-green-800">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                {{ config_feedback.get_estado_suscripcion_display }}
+              </span>
+            {% elif config_feedback.estado_suscripcion == "DEMO" %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
+                           font-semibold bg-blue-100 text-blue-800">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                {{ config_feedback.get_estado_suscripcion_display }}
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
+                           font-semibold bg-red-100 text-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                {{ config_feedback.get_estado_suscripcion_display }}
+              </span>
+            {% endif %}
+          </dd>
+        </div>
+
+        <div class="px-5 py-3 grid grid-cols-2">
+          <dt class="text-gray-400">Última sincronización</dt>
+          <dd class="font-medium text-gray-800">
+            {# date filter: formato argentino DD/MM/YYYY HH:MM #}
+            {{ config_feedback.ultima_sincronizacion|date:"d/m/Y H:i" }}
+          </dd>
+        </div>
+
+        <div class="px-5 py-3 grid grid-cols-2">
+          <dt class="text-gray-400">Activa desde</dt>
+          <dd class="font-medium text-gray-800">
+            {{ config_feedback.created_at|date:"d/m/Y" }}
+          </dd>
+        </div>
+
+      </dl>
+    </section>
+
+  {% endif %}{# fin config_feedback #}
+
+</main>
+
+{# ══════════════════════════════════════════════════════════════════ FOOTER ═ #}
+<footer class="max-w-4xl mx-auto px-4 sm:px-6 py-6 border-t border-gray-100
+               flex flex-col sm:flex-row items-center justify-between gap-2
+               text-xs text-gray-400">
+  <span>DM Global — Servicio de Feedback</span>
+  <a href="mailto:soporte@dmglobal.com"
+     class="hover:text-indigo-600 transition-colors">
+    soporte@dmglobal.com
+  </a>
+</footer>
+
+{# ════════════════════════════════════════════════════════════════ SCRIPTS ══ #}
+<script>
+  /* ── Copiar al portapapeles con feedback visual ── */
+  function copiar(idElemento, btn) {
+    const texto = document.getElementById(idElemento).textContent.trim();
+    navigator.clipboard.writeText(texto).then(() => {
+      const textoOriginal = btn.textContent;
+      const claseOriginal = btn.className;
+      btn.textContent = "¡Copiado!";
+      btn.classList.add("!bg-green-600");
+      setTimeout(() => {
+        btn.textContent = textoOriginal;
+        btn.className = claseOriginal;
+      }, 1800);
+    });
+  }
+
+  /* ── Mostrar / ocultar el API Token ── */
+  function toggleToken() {
+    const code = document.getElementById("val-api-token");
+    const btn  = document.getElementById("btn-toggle-token");
+    const estaOculto = code.classList.contains("blur-sm");
+    code.classList.toggle("blur-sm", !estaOculto);
+    btn.textContent = estaOculto ? "Ocultar" : "Mostrar";
+  }
+</script>
+
+</body>
+</html>
