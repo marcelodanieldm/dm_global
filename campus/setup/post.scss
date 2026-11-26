@@ -1,0 +1,14 @@
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap");
+.navbar.fixed-top { border-bottom: 4px solid transparent; border-image: linear-gradient(90deg,#2d4bf0 0 25%,#ff6b5b 25% 50%,#ffc23d 50% 75%,#35c79c 75% 100%) 1; }
+.navbar .navbar-brand .logo { max-height: 34px; }
+body#page-login-index { background: #f3f5fa; }
+#page-login-index .login-container { border-radius: 1.25rem; border-top: 6px solid #2d4bf0; box-shadow: 0 10px 30px rgba(27,31,59,.08); }
+#page-site-index #page-header h1, .page-header-headings h1 { color: #1b1f3b; }
+.coursebox, .card.dashboard-card { border-radius: 1rem; border: 1px solid #dfe3ee; }
+.coursebox:nth-child(4n+1) { border-left: 6px solid #2d4bf0; }
+.coursebox:nth-child(4n+2) { border-left: 6px solid #ff6b5b; }
+.coursebox:nth-child(4n+3) { border-left: 6px solid #ffc23d; }
+.coursebox:nth-child(4n+4) { border-left: 6px solid #35c79c; }
+.btn-primary { font-weight: 700; }
+#page-footer { background: #1b1f3b !important; color: #f3f5fa; }
+#page-footer a { color: #ffc23d; }
