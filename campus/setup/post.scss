@@ -32,3 +32,5 @@ body#page-login-index { background: #f3f5fa; }
 .dmg-tile span { color: #c9cee0; font-size: .9rem; }
 .dmg-cobalt { border-color: #2d4bf0; } .dmg-coral { border-color: #ff6b5b; } .dmg-mint { border-color: #35c79c; }
 .dmg-links a { color: #ffc23d; font-weight: 700; text-decoration: underline; }
+/* El texto de instrucciones también se imprime en la columna derecha: lo mostramos solo en el panel izquierdo */
+.login-layout-right .dmg-panel { display: none; }
