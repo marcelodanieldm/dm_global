@@ -12,3 +12,23 @@ body#page-login-index { background: #f3f5fa; }
 .btn-primary { font-weight: 700; }
 #page-footer { background: #1b1f3b !important; color: #f3f5fa; }
 #page-footer a { color: #ffc23d; }
+
+/* Panel izquierdo del login: reemplaza el bloque genérico de Moodle */
+.login-layout-left, .login-layout-left-panel, .login-layout .login-layout-left {
+  background: #1b1f3b !important; color: #f3f5fa !important;
+  background-image: radial-gradient(circle at 88% 12%, rgba(45,75,240,.55) 0 18%, transparent 19%),
+                    radial-gradient(circle at 8% 92%, rgba(255,107,91,.45) 0 14%, transparent 15%) !important;
+}
+.login-layout-left-content { max-width: 30rem; }
+.dmg-panel { text-align: left; }
+.dmg-kicker { display: inline-block; font-weight: 700; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase;
+  color: #1b1f3b; background: #ffc23d; padding: .3rem .7rem; border-radius: 999px; margin-bottom: 1rem; }
+.dmg-title { font-family: "Bricolage Grotesque", "DM Sans", sans-serif; font-weight: 800; font-size: 2.2rem; line-height: 1.1; color: #fff; margin-bottom: 1rem; }
+.dmg-title em { font-style: normal; color: #ffc23d; }
+.dmg-lead { font-size: 1.05rem; color: #dfe3ee; margin-bottom: 1.5rem; }
+.dmg-tiles { list-style: none; padding: 0; margin: 0 0 1.5rem; display: grid; gap: .75rem; }
+.dmg-tile { display: flex; flex-direction: column; padding: .9rem 1rem; border-radius: 1rem; background: rgba(255,255,255,.06); border-left: 6px solid; }
+.dmg-tile strong { color: #fff; font-size: 1rem; }
+.dmg-tile span { color: #c9cee0; font-size: .9rem; }
+.dmg-cobalt { border-color: #2d4bf0; } .dmg-coral { border-color: #ff6b5b; } .dmg-mint { border-color: #35c79c; }
+.dmg-links a { color: #ffc23d; font-weight: 700; text-decoration: underline; }
