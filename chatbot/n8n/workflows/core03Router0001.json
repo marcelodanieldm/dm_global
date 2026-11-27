@@ -1,0 +1,173 @@
+{
+ "id": "core03Router0001",
+ "name": "CORE-03 Router de eventos",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "871c68d9-012a-5cc8-bcf0-5b337ec4f05a",
+   "name": "Llamado desde otro workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3cb9ace5-5c09-5aeb-b613-8c7316d438f3",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "new_lead",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "new_lead"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "204b7112-2dbd-52a1-9f76-f65fcec63c5a",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "handover",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "handover"
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "otro"
+    }
+   },
+   "id": "9f3767fe-f84f-5683-8f52-fc1eabc65faa",
+   "name": "Según tipo de evento",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3.2,
+   "position": [
+    220,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "rf02Notify000001",
+    "options": {}
+   },
+   "id": "9aee166a-124f-5eea-94fe-2ef69c4195d7",
+   "name": "RF02-NOTIFY (lead)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    -100
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "rf02Notify000001",
+    "options": {}
+   },
+   "id": "cffc027a-d30e-5a46-90f1-7ee393453b23",
+   "name": "RF02-NOTIFY (derivación)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    40
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "12320ff5-31b3-5cc3-a456-b90d430da05f",
+   "name": "Evento sin flujo asignado",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    480,
+    180
+   ]
+  }
+ ],
+ "connections": {
+  "Llamado desde otro workflow": {
+   "main": [
+    [
+     {
+      "node": "Según tipo de evento",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Según tipo de evento": {
+   "main": [
+    [
+     {
+      "node": "RF02-NOTIFY (lead)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF02-NOTIFY (derivación)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Evento sin flujo asignado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

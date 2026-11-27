@@ -1,0 +1,259 @@
+{
+ "id": "rf01Sync00000001",
+ "name": "RF01-SYNC Sincronizar FAQs",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 30
+      }
+     ]
+    }
+   },
+   "id": "4237ec82-ee1b-5f82-b766-b6f6a69baee0",
+   "name": "Cada 30 minutos",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "17db1544-721f-5a86-8172-6da65be6633d",
+   "name": "Sincronizar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    180
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT id, tenant_id, config->>'spreadsheet_id' AS spreadsheet_id, coalesce(config->>'sheet', '') AS sheet\nFROM data_sources\nWHERE is_active AND source_type = 'google_sheets' AND coalesce(config->>'spreadsheet_id', '') <> ''\n  AND (last_synced_at IS NULL OR last_synced_at < NOW() - make_interval(mins => greatest(sync_interval_min - 1, 1)));",
+    "options": {}
+   },
+   "id": "5d113e40-b680-5e45-81c9-2b64e033d568",
+   "name": "Fuentes a sincronizar",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://docs.google.com/spreadsheets/d/{{ $json.spreadsheet_id }}/gviz/tq?tqx=out:csv{{ $json.sheet ? '&sheet=' + encodeURIComponent($json.sheet) : '' }}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true,
+       "responseFormat": "text"
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "969718fd-dc4d-5268-9900-f1846002578c",
+   "name": "Descargar planilla (CSV)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    440,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Parsea el CSV de la planilla (columnas: id, categoria, pregunta, palabras_clave, respuesta, media_url, media_tipo, activo)\nconst src = $('Fuentes a sincronizar').item.json;\nif ($json.statusCode !== 200 || /^\\s*</.test($json.body || '')) {\n  return { json: { source_id: src.id, error: 'HTTP ' + $json.statusCode + ': la planilla no es pública o el nombre de la hoja no existe' } };\n}\nfunction parseCSV(t) {\n  const rows = []; let row = [], f = '', q = false;\n  for (let i = 0; i < t.length; i++) {\n    const c = t[i];\n    if (q) { if (c === '\"') { if (t[i + 1] === '\"') { f += '\"'; i++; } else q = false; } else f += c; }\n    else if (c === '\"') q = true;\n    else if (c === ',') { row.push(f); f = ''; }\n    else if (c === '\\n' || c === '\\r') { if (c === '\\r' && t[i + 1] === '\\n') i++; row.push(f); rows.push(row); row = []; f = ''; }\n    else f += c;\n  }\n  if (f !== '' || row.length) { row.push(f); rows.push(row); }\n  return rows;\n}\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');\nconst rows = parseCSV($json.body || '');\nconst head = (rows.shift() || []).map(norm);\nconst col = (r, ...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return (r[i] || '').trim(); } return ''; };\nconst items = rows.filter(r => r.some(x => String(x).trim() !== '')).map(r => ({\n  external_key: col(r, 'id', 'clave'),\n  category: col(r, 'categoria', 'category'),\n  question: col(r, 'pregunta', 'question'),\n  keywords: col(r, 'palabras_clave', 'keywords').split(/[,;]/).map(s => s.trim()).filter(Boolean),\n  answer_text: col(r, 'respuesta', 'answer', 'answer_text'),\n  media_url: col(r, 'media_url', 'archivo', 'url_archivo'),\n  media_type: col(r, 'media_tipo', 'media_type', 'tipo_archivo'),\n  is_active: !/^(no|false|0|inactivo)$/i.test(col(r, 'activo', 'active') || 'si'),\n}));\nreturn { json: { source_id: src.id, items, error: null } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "e9793404-7ec7-58da-a06a-777c135c376f",
+   "name": "Formatear FAQs",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "02cd6ab5-f3fb-5a05-af14-1f763a35a3ba",
+       "leftValue": "={{ !!$json.error }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "c4b62c98-2413-556d-8d13-d640904d7b35",
+   "name": "¿Error?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    880,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_sync_failed($1::uuid, $2) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.source_id, $json.error ] }}"
+    }
+   },
+   "id": "ac8cac39-c91a-54eb-8e6d-4305044dfab8",
+   "name": "Registrar error",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1100,
+    0
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_sync_knowledge($1::uuid, $2::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.source_id, JSON.stringify($json.items) ] }}"
+    }
+   },
+   "id": "9e6ac1f7-5d12-58ce-8e13-98d9f6d6ddba",
+   "name": "Actualizar caché",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1100,
+    160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Cada 30 minutos": {
+   "main": [
+    [
+     {
+      "node": "Fuentes a sincronizar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sincronizar ahora": {
+   "main": [
+    [
+     {
+      "node": "Fuentes a sincronizar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fuentes a sincronizar": {
+   "main": [
+    [
+     {
+      "node": "Descargar planilla (CSV)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Descargar planilla (CSV)": {
+   "main": [
+    [
+     {
+      "node": "Formatear FAQs",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Formatear FAQs": {
+   "main": [
+    [
+     {
+      "node": "¿Error?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Error?": {
+   "main": [
+    [
+     {
+      "node": "Registrar error",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Actualizar caché",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

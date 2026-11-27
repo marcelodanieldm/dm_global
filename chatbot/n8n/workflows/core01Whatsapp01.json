@@ -1,0 +1,374 @@
+{
+ "id": "core01Whatsapp01",
+ "name": "CORE-01 Webhook WhatsApp",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "whatsapp",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "a90c50f5-76b9-59fe-8eb1-0c7ead3f433f",
+   "name": "GET verificación Meta",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "1d56f149-a31c-5e38-9d25-cf2ce93ded4b"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_verify_token($1) AS ok, $2::text AS challenge;",
+    "options": {
+     "queryReplacement": "={{ [ $json.query['hub.verify_token'] || '', $json.query['hub.challenge'] || '' ] }}"
+    }
+   },
+   "id": "f5f49693-0df6-5911-a35b-7ec688922e11",
+   "name": "Validar token",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    0
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "df335d64-d35d-5695-b1e0-6103f8919103",
+       "leftValue": "={{ $json.ok }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "0d65141f-bf8e-5724-a9f6-38c609ba06da",
+   "name": "¿Token válido?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $json.challenge }}",
+    "options": {}
+   },
+   "id": "0576fde3-017e-5b10-b54d-bfae1c4c00f3",
+   "name": "Responder challenge",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    660,
+    -80
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "forbidden",
+    "options": {
+     "responseCode": 403
+    }
+   },
+   "id": "a5fce2eb-6eec-5fe5-868f-e58de247e2a8",
+   "name": "Rechazar",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    660,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "whatsapp",
+    "options": {}
+   },
+   "id": "964cc7ad-9cbf-5a4b-abb1-70792b2cf9be",
+   "name": "POST mensajes Meta",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    300
+   ],
+   "webhookId": "5dfb6de2-2fa5-55d8-b525-f1582a63a2e4"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Convierte el payload de Meta en un ítem por mensaje entrante (ignora estados de entrega)\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  for (const entry of body.entry || []) for (const ch of entry.changes || []) {\n    const v = ch.value || {};\n    const pnid = v.metadata && v.metadata.phone_number_id;\n    const names = {};\n    for (const c of v.contacts || []) names[c.wa_id] = c.profile && c.profile.name;\n    for (const m of v.messages || []) {\n      let text = '';\n      if (m.type === 'text') text = (m.text && m.text.body) || '';\n      else if (m.type === 'interactive') text = (m.interactive.button_reply || m.interactive.list_reply || {}).title || '';\n      else if (m.type === 'button') text = (m.button && m.button.text) || '';\n      else text = '[' + m.type + ']';\n      out.push({ json: { phone_number_id: pnid, from: m.from, text, message_id: m.id,\n                         contact_name: names[m.from] || null, channel: 'whatsapp' } });\n    }\n  }\n}\nreturn out;"
+   },
+   "id": "1fac7b33-5f8c-55d9-b255-008bc191a918",
+   "name": "Extraer mensajes",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_handle_message($1::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ JSON.stringify($json) ] }}"
+    }
+   },
+   "id": "96de0672-49b3-57a6-afc9-596ffde434cc",
+   "name": "Motor bot_handle_message",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    440,
+    300
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "734d8cf7-a582-5e41-bbba-87eb8934a82a",
+       "leftValue": "={{ $json.r.action }}",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       },
+       "rightValue": "reply"
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "ead43785-96c7-564f-b66c-1edab8b47e2b",
+   "name": "¿Hay respuesta?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    660,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Un ítem por mensaje a enviar, con las credenciales del tenant que devolvió el motor\nconst out = [];\nfor (const item of $input.all()) {\n  const r = item.json.r;\n  for (const m of r.messages || []) {\n    out.push({ json: { tenant_id: r.tenant_id, phone_number_id: r.phone_number_id, access_token: r.access_token,\n                       graph_version: r.graph_version, to: r.to, message: m } });\n  }\n}\nreturn out;"
+   },
+   "id": "116b290f-aaa8-55ac-933a-779a217106b5",
+   "name": "Mensajes a enviar",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    220
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "core02Enviar0001",
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1100,
+    220
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Un ítem por evento (lead nuevo, derivación...) para el router\nconst out = [];\nfor (const item of $input.all()) {\n  const r = item.json.r;\n  for (const e of r.notify || []) {\n    out.push({ json: { ...e, tenant_id: r.tenant_id, tenant_name: r.tenant_name, phone_number_id: r.phone_number_id,\n                       access_token: r.access_token, graph_version: r.graph_version, contact: r.to } });\n  }\n}\nreturn out;"
+   },
+   "id": "2db4db89-7903-5f8c-b0d4-683ff9342f22",
+   "name": "Eventos",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    400
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "core03Router0001",
+    "options": {}
+   },
+   "id": "1f7e70d3-0482-512d-8e4c-fdfe1d2859fb",
+   "name": "CORE-03 Router de eventos",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1100,
+    400
+   ]
+  }
+ ],
+ "connections": {
+  "GET verificación Meta": {
+   "main": [
+    [
+     {
+      "node": "Validar token",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validar token": {
+   "main": [
+    [
+     {
+      "node": "¿Token válido?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Token válido?": {
+   "main": [
+    [
+     {
+      "node": "Responder challenge",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rechazar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "POST mensajes Meta": {
+   "main": [
+    [
+     {
+      "node": "Extraer mensajes",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Extraer mensajes": {
+   "main": [
+    [
+     {
+      "node": "Motor bot_handle_message",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Motor bot_handle_message": {
+   "main": [
+    [
+     {
+      "node": "¿Hay respuesta?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Hay respuesta?": {
+   "main": [
+    [
+     {
+      "node": "Mensajes a enviar",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Eventos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensajes a enviar": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Eventos": {
+   "main": [
+    [
+     {
+      "node": "CORE-03 Router de eventos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

@@ -1,0 +1,126 @@
+{
+ "id": "core02Enviar0001",
+ "name": "CORE-02 Enviar WhatsApp",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "871c68d9-012a-5cc8-bcf0-5b337ec4f05a",
+   "name": "Llamado desde otro workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Traduce el mensaje interno al formato de la WhatsApp Cloud API\nconst m = $json.message || {};\nconst body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.to };\nif (m.type === 'text') { body.type = 'text'; body.text = { body: m.text, preview_url: true }; }\nelse if (m.type === 'image') { body.type = 'image'; body.image = { link: m.link, caption: m.caption }; }\nelse if (m.type === 'document') { body.type = 'document'; body.document = { link: m.link, filename: m.filename || m.link.split('/').pop() }; }\nelse if (m.type === 'template') { body.type = 'template'; body.template = m.template; }\nelse if (m.type === 'interactive') { body.type = 'interactive'; body.interactive = m.interactive; }\nreturn { json: { ...$json, body } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "f9cc562e-6d99-527a-b071-d2dcb642f7c4",
+   "name": "Armar mensaje Meta",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=https://graph.facebook.com/{{ $json.graph_version }}/{{ $json.phone_number_id }}/messages",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.body) }}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 15000
+    }
+   },
+   "id": "666466d6-2812-50d6-87ad-c3ef612b5141",
+   "name": "Enviar a Graph API",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Resume el resultado del envío (el token no se guarda en la ejecución)\nconst req = $('Armar mensaje Meta').item.json;\nconst ok = $json.statusCode >= 200 && $json.statusCode < 300;\nreturn { json: { ok, statusCode: $json.statusCode, to: req.to, type: req.message.type,\n                 wa_id: ok ? ($json.body.messages || [{}])[0].id : null,\n                 error: ok ? null : ($json.body && $json.body.error) || $json.body } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "7630bf11-a782-52ac-af53-b77494ab391d",
+   "name": "Resultado del envío",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    0
+   ]
+  }
+ ],
+ "connections": {
+  "Llamado desde otro workflow": {
+   "main": [
+    [
+     {
+      "node": "Armar mensaje Meta",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Armar mensaje Meta": {
+   "main": [
+    [
+     {
+      "node": "Enviar a Graph API",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Enviar a Graph API": {
+   "main": [
+    [
+     {
+      "node": "Resultado del envío",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}
