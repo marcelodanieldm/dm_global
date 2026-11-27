@@ -4,7 +4,9 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workflows")
 PG = {"postgres": {"id": "pgChatbotCred01", "name": "Postgres chatbot"}}
 IDS = {"core01": "core01Whatsapp01", "core02": "core02Enviar0001", "core03": "core03Router0001",
        "sync": "rf01Sync00000001", "notify": "rf02Notify000001",
-       "checkout": "rf04Checkout0001", "pagos": "rf04Pagos0000001"}
+       "checkout": "rf04Checkout0001", "pagos": "rf04Pagos0000001",
+       "core04": "core04Email00001", "rf05": "rf05Carts0000001", "rf06": "rf06Remind000001", "rf07": "rf07Renew0000001",
+       "rf08": "rf08Baja00000001", "rf09": "rf09Remind000001", "rf11": "rf11Orders000001"}
 def u(seed): return str(uuid.uuid5(uuid.NAMESPACE_URL, "dmglobal-chatbot/" + seed))
 def node(name, typ, ver, params, pos, **kw):
     n = {"parameters": params, "id": u(name), "name": name, "type": typ, "typeVersion": ver, "position": pos}
@@ -143,18 +145,22 @@ def rule(key): return {"conditions": {"options": {"caseSensitive": True, "leftVa
     "renameOutput": True, "outputKey": key}
 n = [
  trig([0, 0]),
- node("Según tipo de evento", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule("new_lead"), rule("handover"), rule("booking_created"), rule("checkout_requested")]},
+ node("Según tipo de evento", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule("new_lead"), rule("handover"), rule("booking_created"), rule("checkout_requested"),
+                                                                 rule("booking_cancelled"), rule("ticket_created")]},
       "options": {"fallbackOutput": "extra", "renameFallbackOutput": "otro"}}, [220, 0]),
  call("RF02-NOTIFY (lead)", IDS["notify"], [480, -160]),
  call("RF02-NOTIFY (derivación)", IDS["notify"], [480, -40]),
  call("RF02-NOTIFY (reserva)", IDS["notify"], [480, 80]),
  call("RF04-CHECKOUT Link de pago", IDS["checkout"], [480, 200]),
- node("Evento sin flujo asignado", "n8n-nodes-base.noOp", 1, {}, [480, 320]),
+ call("RF02-NOTIFY (reserva anulada)", IDS["notify"], [480, 320]),
+ call("RF02-NOTIFY (ticket)", IDS["notify"], [480, 440]),
+ node("Evento sin flujo asignado", "n8n-nodes-base.noOp", 1, {}, [480, 560]),
 ]
 wf("core03", "CORE-03 Router de eventos", n, conn(("Llamado desde otro workflow", "Según tipo de evento"),
    ("Según tipo de evento", "RF02-NOTIFY (lead)", 0), ("Según tipo de evento", "RF02-NOTIFY (derivación)", 1),
    ("Según tipo de evento", "RF02-NOTIFY (reserva)", 2), ("Según tipo de evento", "RF04-CHECKOUT Link de pago", 3),
-   ("Según tipo de evento", "Evento sin flujo asignado", 4)), [])
+   ("Según tipo de evento", "RF02-NOTIFY (reserva anulada)", 4), ("Según tipo de evento", "RF02-NOTIFY (ticket)", 5),
+   ("Según tipo de evento", "Evento sin flujo asignado", 6)), [])
 
 # ---------- RF02-NOTIFY ----------
 NOTIF = r"""// Mensaje al número de ventas del tenant. Si hay plantilla aprobada se usa (necesaria fuera de la ventana de 24 h)
@@ -319,17 +325,32 @@ MP_IN = r"""// Notificación de Mercado Pago: solo interesan las de suscripción
 const q = $json.query || {}, b = $json.body || {};
 const type = b.type || b.topic || q.type || q.topic || '';
 const id = (b.data && b.data.id) || q['data.id'] || q.id || '';
-return { json: { tenant_id: q.tenant || '', type, id: String(id), relevant: /preapproval/.test(type) && !!id && !!q.tenant } };"""
+// subscription_preapproval: alta o cambio; subscription_authorized_payment: cobro de un período (renovación)
+const kind = /authorized_payment/.test(type) ? 'payment' : 'preapproval';
+return { json: { tenant_id: q.tenant || '', type, kind, id: String(id),
+                 relevant: /preapproval|authorized_payment/.test(type) && !!id && !!q.tenant } };"""
+MP_PAY = r"""// Del cobro se toma la suscripción (preapproval) y se vuelve a leer completa
+const b = $json.body || {}, src = $('MP: token del cliente').item.json;
+return { json: { id: String(b.preapproval_id || ''), access_token: src.access_token, tenant_id: src.tenant_id } };"""
 MP_OK = r"""// Solo una suscripción autorizada activa el alta
 const b = $json.body || {}, src = $('MP: leer aviso').item.json;
 const ok = $json.statusCode === 200 && b.status === 'authorized' && !!b.external_reference;
-return { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-' + b.id + '-' + b.status,
+return { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-' + b.id + '-' + b.status + '-' + (b.next_payment_date || ''),
   subscription_id: b.external_reference || '', ref: b.id || '', period_end: b.next_payment_date || '', payload: b } };"""
 ST_IN = r"""// Evento de Stripe: solo checkout.session.completed. No se confía en el cuerpo: se vuelve a leer la sesión con la API
 const q = $json.query || {}, b = $json.body || {};
 const obj = (b.data && b.data.object) || {};
-return { json: { tenant_id: q.tenant || '', type: b.type || '', id: obj.id || '',
-  relevant: b.type === 'checkout.session.completed' && !!obj.id && !!q.tenant } };"""
+// invoice.paid: cobro de un período (renovación); se lee la suscripción de Stripe
+const subId = b.type === 'invoice.paid' ? (obj.subscription || (obj.parent && obj.parent.subscription_details && obj.parent.subscription_details.subscription) || '') : '';
+return { json: { tenant_id: q.tenant || '', type: b.type || '', id: b.type === 'invoice.paid' ? subId : (obj.id || ''), invoice_id: obj.id || '',
+  relevant: ['checkout.session.completed', 'invoice.paid'].includes(b.type) && !!obj.id && !!q.tenant } };"""
+ST_RENEW = r"""// Suscripción de Stripe tras un cobro: se toma el fin del período pagado
+const b = $json.body || {}, src = $('Stripe: leer evento').item.json;
+const end = b.current_period_end || (b.items && b.items.data && b.items.data[0] && b.items.data[0].current_period_end);
+const ok = $json.statusCode === 200 && ['active', 'trialing'].includes(b.status) && !!(b.metadata && b.metadata.subscription_id);
+return { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-inv-' + src.invoice_id,
+  subscription_id: (b.metadata && b.metadata.subscription_id) || '', ref: b.id || '', period_end: end ? new Date(end * 1000).toISOString() : '',
+  payload: { id: b.id, invoice: src.invoice_id } } };"""
 ST_OK = r"""const b = $json.body || {}, src = $('Stripe: leer evento').item.json;
 const ok = $json.statusCode === 200 && b.status === 'complete' && ['paid', 'no_payment_required'].includes(b.payment_status) && !!b.client_reference_id;
 return { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-' + b.id,
@@ -359,6 +380,12 @@ n = [
    "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
    "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [880, 20]),
  code("MP: validar estado", MP_OK, [1100, 20], mode="runOnceForEachItem"),
+ iff("¿Es un cobro?", "={{ $('MP: leer aviso').item.json.kind }}", STR_EQ, [760, -100], right="payment"),
+ node("MP: consultar cobro", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.mercadopago.com/authorized_payments/{{ $json.id }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [980, -160]),
+ code("MP: suscripción del cobro", MP_PAY, [1200, -160], mode="runOnceForEachItem"),
  node("Stripe: evento", "n8n-nodes-base.webhook", 2, {"httpMethod": "POST", "path": "pagos-stripe", "options": {}}, [0, 240], webhookId=u("wh-stripe")),
  code("Stripe: leer evento", ST_IN, [220, 240], mode="runOnceForEachItem"),
  iff("¿Checkout completo?", "={{ $json.relevant }}", BOOL_TRUE, [440, 240]),
@@ -368,21 +395,237 @@ n = [
    "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
    "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [880, 240]),
  code("Stripe: validar pago", ST_OK, [1100, 240], mode="runOnceForEachItem"),
+ iff("¿Es una renovación?", "={{ $('Stripe: leer evento').item.json.type }}", STR_EQ, [760, 360], right="invoice.paid"),
+ node("Stripe: consultar suscripción", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.stripe.com/v1/subscriptions/{{ $('Stripe: leer evento').item.json.id }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [980, 400]),
+ code("Stripe: validar renovación", ST_RENEW, [1200, 400], mode="runOnceForEachItem"),
  iff("¿Pago válido?", "={{ $json.ok }}", BOOL_TRUE, [1320, 120]),
  pg("Activar suscripción", ACT_Q, ACT_P, [1540, 120]),
  iff("¿Primera activación?", "={{ !!($json.r && $json.r.first_activation) }}", BOOL_TRUE, [1760, 0]),
  code("Mensaje de bienvenida", WELCOME, [1980, 0], mode="runOnceForEachItem"),
  call("CORE-02 Enviar WhatsApp", IDS["core02"], [2200, 0]),
- node("Email de bienvenida (pendiente SMTP)", "n8n-nodes-base.noOp", 1, {}, [2200, 140]),
+ pg("Encolar email de bienvenida", "SELECT bot_rf04_welcome_email($1::uuid) AS email_id;", "={{ [ $json.r.subscription_id ] }}", [1980, 160]),
+ call("CORE-04 Enviar email", IDS["core04"], [2200, 160]),
 ]
 wf("pagos", "RF04-PAGOS Confirmación de pago", n, conn(
    ("Mock: link abierto", "Activar (simulado)"), ("Activar (simulado)", "Responder (simulado)"), ("Responder (simulado)", "¿Primera activación?"),
    ("Mercado Pago: aviso", "MP: leer aviso"), ("MP: leer aviso", "¿Es de suscripción?"), ("¿Es de suscripción?", "MP: token del cliente", 0),
-   ("MP: token del cliente", "MP: consultar preapproval"), ("MP: consultar preapproval", "MP: validar estado"), ("MP: validar estado", "¿Pago válido?"),
+   ("MP: token del cliente", "¿Es un cobro?"), ("¿Es un cobro?", "MP: consultar cobro", 0), ("¿Es un cobro?", "MP: consultar preapproval", 1),
+   ("MP: consultar cobro", "MP: suscripción del cobro"), ("MP: suscripción del cobro", "MP: consultar preapproval"), ("MP: consultar preapproval", "MP: validar estado"), ("MP: validar estado", "¿Pago válido?"),
    ("Stripe: evento", "Stripe: leer evento"), ("Stripe: leer evento", "¿Checkout completo?"), ("¿Checkout completo?", "Stripe: clave del cliente", 0),
-   ("Stripe: clave del cliente", "Stripe: consultar sesión"), ("Stripe: consultar sesión", "Stripe: validar pago"), ("Stripe: validar pago", "¿Pago válido?"),
+   ("Stripe: clave del cliente", "¿Es una renovación?"), ("¿Es una renovación?", "Stripe: consultar suscripción", 0),
+   ("¿Es una renovación?", "Stripe: consultar sesión", 1), ("Stripe: consultar suscripción", "Stripe: validar renovación"),
+   ("Stripe: validar renovación", "¿Pago válido?"), ("Stripe: consultar sesión", "Stripe: validar pago"), ("Stripe: validar pago", "¿Pago válido?"),
    ("¿Pago válido?", "Activar suscripción", 0), ("Activar suscripción", "¿Primera activación?"),
-   ("¿Primera activación?", "Mensaje de bienvenida", 0), ("¿Primera activación?", "Email de bienvenida (pendiente SMTP)", 0),
+   ("¿Primera activación?", "Mensaje de bienvenida", 0), ("¿Primera activación?", "Encolar email de bienvenida", 0), ("Encolar email de bienvenida", "CORE-04 Enviar email"),
    ("Mensaje de bienvenida", "CORE-02 Enviar WhatsApp")), [])
+
+# ---------- CORE-04 Enviar email ----------
+def sched(name, rule, pos): return node(name, "n8n-nodes-base.scheduleTrigger", 1.2, {"rule": {"interval": [rule]}}, pos)
+def manual(name, pos): return node(name, "n8n-nodes-base.manualTrigger", 1, {}, pos)
+def pg1(name, query, repl, pos, **kw):
+    n = pg(name, query, repl, pos); n.update(kw); return n
+SG_BODY = r"""={{ JSON.stringify(Object.assign({
+  personalizations: [{ to: [Object.assign({ email: $json.to_email }, $json.to_name ? { name: $json.to_name } : {})] }],
+  from: { email: $json.from_email, name: $json.from_name },
+  subject: $json.subject,
+  content: [{ type: 'text/plain', value: $json.text }, { type: 'text/html', value: $json.html }],
+  custom_args: { outbox_id: $json.id }
+}, $json.reply_to ? { reply_to: { email: $json.reply_to } } : {})) }}"""
+SG_RES = r"""// SendGrid responde 202 si aceptó el envío
+const e = $('Emails pendientes').item.json;
+const ok = $json.statusCode === 202 || $json.statusCode === 200;
+const h = $json.headers || {};
+return { json: { id: e.id, ok, ref: h['x-message-id'] || '', error: ok ? '' : 'HTTP ' + $json.statusCode + ': ' + JSON.stringify($json.body).slice(0, 500) } };"""
+MOCK_RES = r"""// Proveedor simulado: el email queda registrado como enviado (para pruebas)
+return { json: { id: $json.id, ok: true, ref: 'mock-' + $json.id, error: '' } };"""
+NOPROV = r"""return { json: { id: $json.id, ok: false, ref: '', error: 'proveedor de email no soportado: ' + $json.provider } };"""
+n = [
+ trig([0, 0]),
+ sched("Cada 5 minutos", {"field": "minutes", "minutesInterval": 5}, [0, 160]),
+ manual("Enviar ahora", [0, 320]),
+ pg1("Emails pendientes", "SELECT * FROM bot_email_claim(50);", None, [240, 160], executeOnce=True),
+ node("Según proveedor", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule2("sendgrid", "={{ $json.provider }}"), rule2("mock", "={{ $json.provider }}")]},
+      "options": {"fallbackOutput": "extra", "renameFallbackOutput": "otro"}}, [460, 160]),
+ node("SendGrid: enviar", "n8n-nodes-base.httpRequest", 4.2, {
+   "method": "POST", "url": "https://api.sendgrid.com/v3/mail/send",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.api_key }}"}]},
+   "sendBody": True, "specifyBody": "json", "jsonBody": SG_BODY,
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [700, 40]),
+ code("SendGrid: resultado", SG_RES, [920, 40], mode="runOnceForEachItem"),
+ code("Simulado: marcar enviado", MOCK_RES, [700, 180], mode="runOnceForEachItem"),
+ code("Proveedor desconocido", NOPROV, [700, 320], mode="runOnceForEachItem"),
+ pg("Registrar resultado", "SELECT bot_email_result($1::uuid, $2::boolean, $3, $4);", "={{ [ $json.id, $json.ok, $json.ref, $json.error ] }}", [1160, 160]),
+]
+wf("core04", "CORE-04 Enviar email", n, conn(("Llamado desde otro workflow", "Emails pendientes"), ("Cada 5 minutos", "Emails pendientes"),
+   ("Enviar ahora", "Emails pendientes"), ("Emails pendientes", "Según proveedor"),
+   ("Según proveedor", "SendGrid: enviar", 0), ("Según proveedor", "Simulado: marcar enviado", 1), ("Según proveedor", "Proveedor desconocido", 2),
+   ("SendGrid: enviar", "SendGrid: resultado"), ("SendGrid: resultado", "Registrar resultado"),
+   ("Simulado: marcar enviado", "Registrar resultado"), ("Proveedor desconocido", "Registrar resultado")), [])
+
+def wh(name, method, path, pos, respond=True):
+    p = {"httpMethod": method, "path": path, "options": {}}
+    if respond: p["responseMode"] = "responseNode"
+    return node(name, "n8n-nodes-base.webhook", 2, p, pos, webhookId=u("wh-" + path))
+def respond_json(name, expr, pos):
+    return node(name, "n8n-nodes-base.respondToWebhook", 1.1, {"respondWith": "json", "responseBody": expr, "options": {}}, pos)
+
+# ---------- RF05-REMIND carrito abandonado ----------
+TN_CARTS = r"""// Carritos abandonados de Tiendanube → formato normalizado
+const src = $('Tiendas Tiendanube').item.json;
+const name = v => (v && typeof v === 'object') ? (v.es || Object.values(v)[0] || '') : (v || '');
+const list = $json.statusCode === 200 && Array.isArray($json.body) ? $json.body : [];
+const carts = list.map(c => ({
+  source: 'tiendanube', external_id: String(c.id), name: c.contact_name || (c.customer && c.customer.name) || '',
+  email: c.contact_email || (c.customer && c.customer.email) || '', phone: c.contact_phone || '',
+  items: (c.products || []).map(p => ({ name: name(p.name), quantity: Number(p.quantity || 1), price: Number(p.price || 0) })),
+  total: c.total, currency: c.currency || 'ARS', checkout_url: c.abandoned_checkout_url || '',
+  updated_at: c.updated_at || c.created_at, completed: !!c.completed_at }));
+return { json: { tenant_id: src.tenant_id, carts, error: $json.statusCode === 200 ? null : 'HTTP ' + $json.statusCode } };"""
+n = [
+ sched("Cada 30 minutos", {"field": "minutes", "minutesInterval": 30}, [0, 0]),
+ manual("Revisar ahora", [0, 160]),
+ pg("Tiendas Tiendanube", "SELECT * FROM bot_rf05_tiendanube_sources();", None, [240, -60]),
+ node("Tiendanube: carritos abandonados", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.tiendanube.com/v1/{{ $json.store_id }}/checkouts",
+   "sendQuery": True, "queryParameters": {"parameters": [{"name": "per_page", "value": "200"}, {"name": "created_at_min", "value": "={{ $json.since }}"}]},
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authentication", "value": "=bearer {{ $json.access_token }}"},
+                                                             {"name": "User-Agent", "value": "={{ $json.user_agent }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 30000}}, [480, -60]),
+ code("Normalizar carritos", TN_CARTS, [720, -60], mode="runOnceForEachItem"),
+ pg("Guardar carritos", "SELECT bot_rf05_upsert_carts($1::uuid, $2::jsonb) AS n;", "={{ [ $json.tenant_id, JSON.stringify($json.carts) ] }}", [960, -60]),
+ pg1("Programar recordatorios", "SELECT bot_rf05_due() AS emails;", None, [240, 160], executeOnce=True),
+ call("CORE-04 Enviar email", IDS["core04"], [480, 160]),
+ wh("Carrito desde la tienda", "POST", "rf05-carrito", [0, 380]),
+ pg("Guardar carrito recibido", "SELECT bot_rf05_ingest($1, $2::jsonb) AS r;", "={{ [ $json.query.key || '', JSON.stringify($json.body || {}) ] }}", [240, 380]),
+ respond_json("Responder", "={{ JSON.stringify($json.r) }}", [480, 380]),
+]
+wf("rf05", "RF05-REMIND Carrito abandonado", n, conn(
+   ("Cada 30 minutos", "Tiendas Tiendanube"), ("Cada 30 minutos", "Programar recordatorios"),
+   ("Revisar ahora", "Tiendas Tiendanube"), ("Revisar ahora", "Programar recordatorios"),
+   ("Tiendas Tiendanube", "Tiendanube: carritos abandonados"), ("Tiendanube: carritos abandonados", "Normalizar carritos"),
+   ("Normalizar carritos", "Guardar carritos"), ("Programar recordatorios", "CORE-04 Enviar email"),
+   ("Carrito desde la tienda", "Guardar carrito recibido"), ("Guardar carrito recibido", "Responder")), [])
+
+# ---------- RF06-REMIND y RF07-RENEW ----------
+DAILY9 = {"field": "days", "daysInterval": 1, "triggerAtHour": 9}
+n = [
+ sched("Todos los días 9 h", DAILY9, [0, 0]), manual("Revisar ahora", [0, 160]),
+ pg1("Vencimientos y recordatorios", "SELECT bot_subscriptions_expire() AS vencimientos, bot_rf06_due() AS emails;", None, [240, 80], executeOnce=True),
+ call("CORE-04 Enviar email", IDS["core04"], [480, 80]),
+]
+wf("rf06", "RF06-REMIND Recordatorio de pago", n, conn(("Todos los días 9 h", "Vencimientos y recordatorios"), ("Revisar ahora", "Vencimientos y recordatorios"),
+   ("Vencimientos y recordatorios", "CORE-04 Enviar email")), [])
+n = [
+ sched("Todos los días 9 h", dict(DAILY9, triggerAtMinute=10), [0, 0]), manual("Revisar ahora", [0, 160]),
+ pg1("Avisos de renovación", "SELECT bot_rf07_due() AS emails;", None, [240, 80], executeOnce=True),
+ call("CORE-04 Enviar email", IDS["core04"], [480, 80]),
+]
+wf("rf07", "RF07-RENEW Aviso de renovación", n, conn(("Todos los días 9 h", "Avisos de renovación"), ("Revisar ahora", "Avisos de renovación"),
+   ("Avisos de renovación", "CORE-04 Enviar email")), [])
+
+# ---------- RF08-BAJA ----------
+HTML_HDR = {"responseHeaders": {"entries": [{"name": "Content-Type", "value": "text/html; charset=utf-8"},
+                                            {"name": "Cache-Control", "value": "no-store"}, {"name": "X-Robots-Tag", "value": "noindex"}]}}
+CANCEL_RES = r"""// Resultado de detener los cobros en la pasarela
+const r = $('Confirmar baja').item.json.r;
+const j = $json; let ok = true, detail = '';
+if (j.statusCode !== undefined) { ok = j.statusCode >= 200 && j.statusCode < 300; detail = ok ? '' : 'HTTP ' + j.statusCode + ': ' + JSON.stringify(j.body).slice(0, 300); }
+return { json: { subscription_id: r.subscription_id || '', ok, detail, cancelled_now: !!(r.ok && !r.already), tenant_id: r.tenant_id || '',
+                 notify_text: r.notify_text || '' } };"""
+NOTIFY_ITEM = r"""return { json: $json.e };"""
+n = [
+ wh("Página de la suscripción", "GET", "suscripcion", [0, 0]),
+ pg("Armar página", "SELECT bot_rf08_page($1) AS page;", "={{ [ $json.query.t || '' ] }}", [240, 0]),
+ node("Mostrar página", "n8n-nodes-base.respondToWebhook", 1.1, {"respondWith": "text", "responseBody": "={{ $json.page }}", "options": HTML_HDR}, [480, 0]),
+ wh("Confirmación de baja", "POST", "suscripcion-baja", [0, 260]),
+ pg("Confirmar baja", "SELECT bot_rf08_cancel($1) AS r;", "={{ [ ($json.body && $json.body.t) || '' ] }}", [240, 260]),
+ node("Según pasarela", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule2("mercadopago", "={{ $json.r.provider }}"), rule2("stripe", "={{ $json.r.provider }}")]},
+      "options": {"fallbackOutput": "extra", "renameFallbackOutput": "sin_cobros"}}, [480, 260]),
+ node("Mercado Pago: cancelar preapproval", "n8n-nodes-base.httpRequest", 4.2, {
+   "method": "PUT", "url": "=https://api.mercadopago.com/preapproval/{{ $json.r.provider_ref }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.r.provider_token }}"}]},
+   "sendBody": True, "specifyBody": "json", "jsonBody": "{\"status\": \"cancelled\"}",
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [720, 140]),
+ node("Stripe: cancelar suscripción", "n8n-nodes-base.httpRequest", 4.2, {
+   "method": "DELETE", "url": "=https://api.stripe.com/v1/subscriptions/{{ $json.r.provider_ref }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.r.provider_token }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [720, 260]),
+ node("Sin cobros que detener", "n8n-nodes-base.noOp", 1, {}, [720, 380]),
+ code("Resultado de la baja", CANCEL_RES, [960, 260], mode="runOnceForEachItem"),
+ node("Mostrar confirmación", "n8n-nodes-base.respondToWebhook", 1.1, {"respondWith": "text",
+   "responseBody": "={{ $('Confirmar baja').item.json.r.page }}", "options": HTML_HDR}, [1180, 260]),
+ iff("¿Se canceló ahora?", "={{ $json.cancelled_now }}", BOOL_TRUE, [1400, 260]),
+ pg("Registrar en la suscripción", "SELECT bot_rf08_provider_result($1::uuid, $2::boolean, $3);",
+    "={{ [ $json.subscription_id, $json.ok, $json.detail ] }}", [1620, 140]),
+ call("CORE-04 Enviar email", IDS["core04"], [1840, 140]),
+ pg("Aviso a ventas", "SELECT bot_notify_payload($1::uuid, jsonb_build_object('type', 'subscription_cancelled', 'text', $2::text)) AS e;",
+    "={{ [ $('Resultado de la baja').item.json.tenant_id, $('Resultado de la baja').item.json.notify_text ] }}", [1620, 340]),
+ code("Evento de baja", NOTIFY_ITEM, [1840, 340], mode="runOnceForEachItem"),
+ call("RF02-NOTIFY Aviso a ventas", IDS["notify"], [2060, 340]),
+]
+wf("rf08", "RF08-BAJA Cancelación de suscripción", n, conn(
+   ("Página de la suscripción", "Armar página"), ("Armar página", "Mostrar página"),
+   ("Confirmación de baja", "Confirmar baja"), ("Confirmar baja", "Según pasarela"),
+   ("Según pasarela", "Mercado Pago: cancelar preapproval", 0), ("Según pasarela", "Stripe: cancelar suscripción", 1), ("Según pasarela", "Sin cobros que detener", 2),
+   ("Mercado Pago: cancelar preapproval", "Resultado de la baja"), ("Stripe: cancelar suscripción", "Resultado de la baja"), ("Sin cobros que detener", "Resultado de la baja"),
+   ("Resultado de la baja", "Mostrar confirmación"), ("Mostrar confirmación", "¿Se canceló ahora?"),
+   ("¿Se canceló ahora?", "Registrar en la suscripción", 0), ("¿Se canceló ahora?", "Aviso a ventas", 0),
+   ("Registrar en la suscripción", "CORE-04 Enviar email"), ("Aviso a ventas", "Evento de baja"), ("Evento de baja", "RF02-NOTIFY Aviso a ventas")), [])
+
+# ---------- RF09-REMIND ----------
+UNWRAP = r"""return { json: $json.r };"""
+n = [
+ sched("Cada 15 minutos", {"field": "minutes", "minutesInterval": 15}, [0, 0]), manual("Revisar ahora", [0, 160]),
+ pg1("Reservas a recordar", "SELECT r FROM bot_rf09_due() r;", None, [240, 80], executeOnce=True),
+ code("Mensaje de recordatorio", UNWRAP, [480, 80], mode="runOnceForEachItem"),
+ call("CORE-02 Enviar WhatsApp", IDS["core02"], [720, 80]),
+]
+wf("rf09", "RF09-REMIND Recordatorio de reserva", n, conn(("Cada 15 minutos", "Reservas a recordar"), ("Revisar ahora", "Reservas a recordar"),
+   ("Reservas a recordar", "Mensaje de recordatorio"), ("Mensaje de recordatorio", "CORE-02 Enviar WhatsApp")), [])
+
+# ---------- RF11-ORDERS ----------
+ORD_IN = r"""// Tiendanube manda solo {store_id, event, id}: hay que pedir el pedido a su API. Otro sistema manda el pedido completo.
+const b = $json.body || {};
+const tn = !!(b.store_id && b.event && b.id && /^order\//.test(b.event));
+return { json: { key: ($json.query && $json.query.key) || '', tiendanube: tn, order_id: tn ? String(b.id) : '', body: b } };"""
+TN_ORDER = r"""// Pedido de Tiendanube → formato normalizado
+const o = $json.body || {}, src = $('Leer aviso').item.json, ctx = $('Datos de la tienda').item.json.c;
+if ($json.statusCode !== 200) return { json: { tenant_id: ctx.tenant_id, order: null, error: 'HTTP ' + $json.statusCode } };
+const name = v => (v && typeof v === 'object') ? (v.es || Object.values(v)[0] || '') : (v || '');
+return { json: { tenant_id: ctx.tenant_id, error: null, order: {
+  source: 'tiendanube', external_id: String(o.id), number: String(o.number || o.id),
+  name: o.contact_name || (o.customer && o.customer.name) || '', email: o.contact_email || (o.customer && o.customer.email) || '',
+  phone: o.contact_phone || (o.customer && o.customer.phone) || '', tax_id: o.contact_identification || (o.customer && o.customer.identification) || '',
+  status: o.status, payment_status: o.payment_status, shipping_status: o.shipping_status,
+  tracking_number: o.shipping_tracking_number || '', tracking_url: o.shipping_tracking_url || '',
+  total: o.total, currency: o.currency || 'ARS', created_at: o.created_at,
+  items: (o.products || []).map(p => ({ name: name(p.name), quantity: Number(p.quantity || 1), price: Number(p.price || 0) })) } } };"""
+n = [
+ wh("Pedido nuevo o actualizado", "POST", "rf11-pedido", [0, 0], respond=False),
+ code("Leer aviso", ORD_IN, [240, 0], mode="runOnceForEachItem"),
+ iff("¿Es de Tiendanube?", "={{ $json.tiendanube }}", BOOL_TRUE, [460, 0]),
+ pg("Datos de la tienda", "SELECT bot_hook_context($1, 'tiendanube') AS c;", "={{ [ $json.key ] }}", [680, -100]),
+ iff("¿Tienda configurada?", "={{ !!($json.c && $json.c.store_id) }}", BOOL_TRUE, [900, -100]),
+ node("Tiendanube: leer pedido", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.tiendanube.com/v1/{{ $json.c.store_id }}/orders/{{ $('Leer aviso').item.json.order_id }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authentication", "value": "=bearer {{ $json.c.access_token }}"},
+                                                             {"name": "User-Agent", "value": "={{ $json.c.user_agent }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [1120, -160]),
+ code("Normalizar pedido", TN_ORDER, [1340, -160], mode="runOnceForEachItem"),
+ pg("Guardar pedido", "SELECT bot_rf11_upsert_order($1::uuid, $2::jsonb) AS id WHERE $2 <> 'null';",
+    "={{ [ $json.tenant_id, JSON.stringify($json.order) ] }}", [1560, -160]),
+ node("Clave inválida o tienda sin configurar", "n8n-nodes-base.noOp", 1, {}, [1120, 0]),
+ pg("Guardar pedido recibido", "SELECT bot_rf11_ingest($1, $2::jsonb) AS r;", "={{ [ $json.key, JSON.stringify($json.body) ] }}", [680, 120]),
+]
+wf("rf11", "RF11-ORDERS Pedidos para seguimiento", n, conn(
+   ("Pedido nuevo o actualizado", "Leer aviso"), ("Leer aviso", "¿Es de Tiendanube?"),
+   ("¿Es de Tiendanube?", "Datos de la tienda", 0), ("¿Es de Tiendanube?", "Guardar pedido recibido", 1),
+   ("Datos de la tienda", "¿Tienda configurada?"), ("¿Tienda configurada?", "Tiendanube: leer pedido", 0),
+   ("¿Tienda configurada?", "Clave inválida o tienda sin configurar", 1),
+   ("Tiendanube: leer pedido", "Normalizar pedido"), ("Normalizar pedido", "Guardar pedido")), [])
+
 
 print(sorted(os.listdir(OUT)))

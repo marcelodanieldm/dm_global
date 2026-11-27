@@ -1,0 +1,149 @@
+{
+ "id": "rf09Remind000001",
+ "name": "RF09-REMIND Recordatorio de reserva",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 15
+      }
+     ]
+    }
+   },
+   "id": "f4ae0ff1-1f35-5b4b-8996-450499f6eb20",
+   "name": "Cada 15 minutos",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "7af8e396-1c64-5184-8fd2-01a35872ccdf",
+   "name": "Revisar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT r FROM bot_rf09_due() r;",
+    "options": {}
+   },
+   "id": "c8c3bbca-ab13-530e-af7b-19d54328f907",
+   "name": "Reservas a recordar",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "executeOnce": true
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: $json.r };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "a44cf61d-445d-59d0-9981-9adccf19994a",
+   "name": "Mensaje de recordatorio",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    480,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    720,
+    80
+   ]
+  }
+ ],
+ "connections": {
+  "Cada 15 minutos": {
+   "main": [
+    [
+     {
+      "node": "Reservas a recordar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Revisar ahora": {
+   "main": [
+    [
+     {
+      "node": "Reservas a recordar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Reservas a recordar": {
+   "main": [
+    [
+     {
+      "node": "Mensaje de recordatorio",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje de recordatorio": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

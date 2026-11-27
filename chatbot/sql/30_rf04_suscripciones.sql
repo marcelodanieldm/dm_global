@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS subscriptions_tenant_status_idx ON subscriptions (tenant_id, status);
+-- Token del link de autogestión / baja (RF-07, RF-08). No es adivinable y no expone el id.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS manage_token TEXT UNIQUE DEFAULT encode(gen_random_bytes(18), 'hex');
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+UPDATE subscriptions SET manage_token = encode(gen_random_bytes(18), 'hex') WHERE manage_token IS NULL;
 
 -- Pasarela de pago de cada cliente (mock = simulada, para pruebas)
 CREATE TABLE IF NOT EXISTS payment_integrations (
@@ -169,7 +173,9 @@ CREATE OR REPLACE FUNCTION bot_rf04_checkout_context(p_sub UUID) RETURNS JSONB L
     'customer', jsonb_build_object('name', c.name, 'email', c.email, 'tax_id', c.tax_id, 'phone', c.phone),
     'provider', coalesce(pi.provider, 'none'), 'provider_token', pi.access_token, 'provider_config', coalesce(pi.config, '{}'),
     'notification_url', 'https://n8n.dmglobal.tech/webhook/pagos-' || coalesce(pi.provider, 'none') || '?tenant=' || s.tenant_id,
-    'phone_number_id', w.phone_number_id, 'access_token', w.access_token, 'graph_version', w.graph_version, 'to', c.phone)
+    'phone_number_id', w.phone_number_id, 'access_token', w.access_token, 'graph_version', w.graph_version, 'to', c.phone,
+    'provider_ref', s.provider_ref, 'current_period_end', s.current_period_end,
+    'manage_url', 'https://n8n.dmglobal.tech/webhook/suscripcion?t=' || s.manage_token)
   FROM subscriptions s
   JOIN tenants t ON t.id = s.tenant_id
   JOIN subscription_plans p ON p.id = s.plan_id
@@ -196,6 +202,12 @@ BEGIN
 
   SELECT * INTO s FROM subscriptions WHERE id = p_sub AND tenant_id = p_tenant FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'subscription not found for tenant'); END IF;
+  IF s.status = 'cancelled' THEN RETURN jsonb_build_object('ok', false, 'error', 'subscription cancelled'); END IF;
+  IF s.status = 'active' AND p_period_end IS NOT NULL AND p_period_end > coalesce(s.current_period_end, '-infinity') THEN
+    -- Renovación: la pasarela cobró un nuevo período
+    UPDATE subscriptions SET current_period_end = p_period_end WHERE id = p_sub;
+    RETURN jsonb_build_object('ok', true, 'duplicate', false, 'first_activation', false, 'renewed', true) || bot_rf04_checkout_context(p_sub);
+  END IF;
   IF s.status <> 'active' THEN
     v_first := s.activated_at IS NULL;
     UPDATE subscriptions SET status = 'active', activated_at = coalesce(activated_at, NOW()),

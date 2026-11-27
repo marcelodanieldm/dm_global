@@ -76,7 +76,7 @@
   },
   {
    "parameters": {
-    "jsCode": "// Notificación de Mercado Pago: solo interesan las de suscripción (preapproval)\nconst q = $json.query || {}, b = $json.body || {};\nconst type = b.type || b.topic || q.type || q.topic || '';\nconst id = (b.data && b.data.id) || q['data.id'] || q.id || '';\nreturn { json: { tenant_id: q.tenant || '', type, id: String(id), relevant: /preapproval/.test(type) && !!id && !!q.tenant } };",
+    "jsCode": "// Notificación de Mercado Pago: solo interesan las de suscripción (preapproval)\nconst q = $json.query || {}, b = $json.body || {};\nconst type = b.type || b.topic || q.type || q.topic || '';\nconst id = (b.data && b.data.id) || q['data.id'] || q.id || '';\n// subscription_preapproval: alta o cambio; subscription_authorized_payment: cobro de un período (renovación)\nconst kind = /authorized_payment/.test(type) ? 'payment' : 'preapproval';\nreturn { json: { tenant_id: q.tenant || '', type, kind, id: String(id),\n                 relevant: /preapproval|authorized_payment/.test(type) && !!id && !!q.tenant } };",
     "mode": "runOnceForEachItem"
    },
    "id": "1f84d137-c3ab-5bc3-992e-2b27c8bc0033",
@@ -176,7 +176,7 @@
   },
   {
    "parameters": {
-    "jsCode": "// Solo una suscripción autorizada activa el alta\nconst b = $json.body || {}, src = $('MP: leer aviso').item.json;\nconst ok = $json.statusCode === 200 && b.status === 'authorized' && !!b.external_reference;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-' + b.id + '-' + b.status,\n  subscription_id: b.external_reference || '', ref: b.id || '', period_end: b.next_payment_date || '', payload: b } };",
+    "jsCode": "// Solo una suscripción autorizada activa el alta\nconst b = $json.body || {}, src = $('MP: leer aviso').item.json;\nconst ok = $json.statusCode === 200 && b.status === 'authorized' && !!b.external_reference;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-' + b.id + '-' + b.status + '-' + (b.next_payment_date || ''),\n  subscription_id: b.external_reference || '', ref: b.id || '', period_end: b.next_payment_date || '', payload: b } };",
     "mode": "runOnceForEachItem"
    },
    "id": "001e98a0-7988-5151-a902-eebbbc2bbf77",
@@ -186,6 +186,83 @@
    "position": [
     1100,
     20
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "6804dbd7-e9af-571e-ac8d-502435c9f6d2",
+       "leftValue": "={{ $('MP: leer aviso').item.json.kind }}",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       },
+       "rightValue": "payment"
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "1d96a3e1-b382-531e-84a1-c42ff8e7fd99",
+   "name": "¿Es un cobro?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    760,
+    -100
+   ]
+  },
+  {
+   "parameters": {
+    "url": "=https://api.mercadopago.com/authorized_payments/{{ $json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "344a8858-4974-5f78-a239-aebecfe4e549",
+   "name": "MP: consultar cobro",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    980,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Del cobro se toma la suscripción (preapproval) y se vuelve a leer completa\nconst b = $json.body || {}, src = $('MP: token del cliente').item.json;\nreturn { json: { id: String(b.preapproval_id || ''), access_token: src.access_token, tenant_id: src.tenant_id } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "9305b885-f61c-59c7-86ec-06a434a4c991",
+   "name": "MP: suscripción del cobro",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1200,
+    -160
    ]
   },
   {
@@ -206,7 +283,7 @@
   },
   {
    "parameters": {
-    "jsCode": "// Evento de Stripe: solo checkout.session.completed. No se confía en el cuerpo: se vuelve a leer la sesión con la API\nconst q = $json.query || {}, b = $json.body || {};\nconst obj = (b.data && b.data.object) || {};\nreturn { json: { tenant_id: q.tenant || '', type: b.type || '', id: obj.id || '',\n  relevant: b.type === 'checkout.session.completed' && !!obj.id && !!q.tenant } };",
+    "jsCode": "// Evento de Stripe: solo checkout.session.completed. No se confía en el cuerpo: se vuelve a leer la sesión con la API\nconst q = $json.query || {}, b = $json.body || {};\nconst obj = (b.data && b.data.object) || {};\n// invoice.paid: cobro de un período (renovación); se lee la suscripción de Stripe\nconst subId = b.type === 'invoice.paid' ? (obj.subscription || (obj.parent && obj.parent.subscription_details && obj.parent.subscription_details.subscription) || '') : '';\nreturn { json: { tenant_id: q.tenant || '', type: b.type || '', id: b.type === 'invoice.paid' ? subId : (obj.id || ''), invoice_id: obj.id || '',\n  relevant: ['checkout.session.completed', 'invoice.paid'].includes(b.type) && !!obj.id && !!q.tenant } };",
     "mode": "runOnceForEachItem"
    },
    "id": "a6b4c34d-569c-5e3c-a660-ef7dd26dc634",
@@ -316,6 +393,83 @@
    "position": [
     1100,
     240
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "88b7a9e9-d808-5faa-9747-ad5cc695793f",
+       "leftValue": "={{ $('Stripe: leer evento').item.json.type }}",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       },
+       "rightValue": "invoice.paid"
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "65807b10-92e1-52d8-a148-9ca38bca7a97",
+   "name": "¿Es una renovación?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    760,
+    360
+   ]
+  },
+  {
+   "parameters": {
+    "url": "=https://api.stripe.com/v1/subscriptions/{{ $('Stripe: leer evento').item.json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "69dbf690-c773-557e-9082-c131a668dde1",
+   "name": "Stripe: consultar suscripción",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    980,
+    400
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Suscripción de Stripe tras un cobro: se toma el fin del período pagado\nconst b = $json.body || {}, src = $('Stripe: leer evento').item.json;\nconst end = b.current_period_end || (b.items && b.items.data && b.items.data[0] && b.items.data[0].current_period_end);\nconst ok = $json.statusCode === 200 && ['active', 'trialing'].includes(b.status) && !!(b.metadata && b.metadata.subscription_id);\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-inv-' + src.invoice_id,\n  subscription_id: (b.metadata && b.metadata.subscription_id) || '', ref: b.id || '', period_end: end ? new Date(end * 1000).toISOString() : '',\n  payload: { id: b.id, invoice: src.invoice_id } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "ad687ce7-1e93-5c54-89a0-7562d36b2f6b",
+   "name": "Stripe: validar renovación",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1200,
+    400
    ]
   },
   {
@@ -439,14 +593,45 @@
    ]
   },
   {
-   "parameters": {},
-   "id": "52708b59-6d32-59c4-86fc-15ff6f0a3f77",
-   "name": "Email de bienvenida (pendiente SMTP)",
-   "type": "n8n-nodes-base.noOp",
-   "typeVersion": 1,
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf04_welcome_email($1::uuid) AS email_id;",
+    "options": {
+     "queryReplacement": "={{ [ $json.r.subscription_id ] }}"
+    }
+   },
+   "id": "12f8ecc8-435a-56e4-8705-e798c8fb3ae9",
+   "name": "Encolar email de bienvenida",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1980,
+    160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core04Email00001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c6d94ecd-684b-5533-bd3f-6558a308d36e",
+   "name": "CORE-04 Enviar email",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
    "position": [
     2200,
-    140
+    160
    ]
   }
  ],
@@ -521,6 +706,46 @@
    "main": [
     [
      {
+      "node": "¿Es un cobro?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Es un cobro?": {
+   "main": [
+    [
+     {
+      "node": "MP: consultar cobro",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "MP: consultar preapproval",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: consultar cobro": {
+   "main": [
+    [
+     {
+      "node": "MP: suscripción del cobro",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: suscripción del cobro": {
+   "main": [
+    [
+     {
       "node": "MP: consultar preapproval",
       "type": "main",
       "index": 0
@@ -587,7 +812,47 @@
    "main": [
     [
      {
+      "node": "¿Es una renovación?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Es una renovación?": {
+   "main": [
+    [
+     {
+      "node": "Stripe: consultar suscripción",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
       "node": "Stripe: consultar sesión",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: consultar suscripción": {
+   "main": [
+    [
+     {
+      "node": "Stripe: validar renovación",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: validar renovación": {
+   "main": [
+    [
+     {
+      "node": "¿Pago válido?",
       "type": "main",
       "index": 0
      }
@@ -647,7 +912,18 @@
       "index": 0
      },
      {
-      "node": "Email de bienvenida (pendiente SMTP)",
+      "node": "Encolar email de bienvenida",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Encolar email de bienvenida": {
+   "main": [
+    [
+     {
+      "node": "CORE-04 Enviar email",
       "type": "main",
       "index": 0
      }

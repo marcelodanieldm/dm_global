@@ -159,7 +159,7 @@ BEGIN
   RETURN NULL;
 END $$;
 
--- Stubs: se reemplazan en 20_rf03_reservas.sql y 30_rf04_suscripciones.sql
+-- Stubs: se reemplazan en los archivos de cada flujo (20_, 30_, 50_, 60_)
 DO $$ BEGIN
   IF to_regprocedure('bot_rf03_start(jsonb)') IS NULL THEN
     CREATE FUNCTION bot_rf03_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
@@ -168,6 +168,17 @@ DO $$ BEGIN
   IF to_regprocedure('bot_rf04_start(jsonb)') IS NULL THEN
     CREATE FUNCTION bot_rf04_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
     CREATE FUNCTION bot_rf04_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+  END IF;
+  IF to_regprocedure('bot_rf08_start(jsonb)') IS NULL THEN
+    CREATE FUNCTION bot_rf08_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+  END IF;
+  IF to_regprocedure('bot_rf10_start(jsonb)') IS NULL THEN
+    CREATE FUNCTION bot_rf10_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+    CREATE FUNCTION bot_rf10_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+  END IF;
+  IF to_regprocedure('bot_rf11_start(jsonb)') IS NULL THEN
+    CREATE FUNCTION bot_rf11_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+    CREATE FUNCTION bot_rf11_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
   END IF;
 END $$;
 
@@ -225,11 +236,17 @@ BEGIN
   IF c.state IS NOT NULL AND (ctx->>'msg') ~ '^(cancelar|salir|menu|reiniciar|basta)$' THEN
     PERFORM bot_conv_clear(t.id, v_from);
     res := bot_reply('cancelled', jsonb_build_array(bot_msg_text(v_settings->>'no_lead_text')));
+  ELSIF c.state IS NOT NULL AND coalesce(ctx->>'reply_id', '') ~ '^rm:' THEN
+    -- Tocó un botón del recordatorio (RF-09) en medio de otra conversación: manda el botón
+    PERFORM bot_conv_clear(t.id, v_from);
+    ctx := ctx || jsonb_build_object('state', NULL, 'data', '{}'::jsonb);
   ELSIF c.state IS NOT NULL THEN
     res := CASE
              WHEN c.state = 'offer_lead' OR c.state LIKE 'lead\_%' THEN bot_rf02_step(ctx)
              WHEN c.state LIKE 'booking\_%' THEN bot_rf03_step(ctx)
              WHEN c.state LIKE 'sub\_%' THEN bot_rf04_step(ctx)
+             WHEN c.state LIKE 'rbk\_%' THEN bot_rf10_step(ctx)
+             WHEN c.state LIKE 'order\_%' OR c.state LIKE 'support\_%' THEN bot_rf11_step(ctx)
            END;
     IF res IS NULL THEN
       PERFORM bot_conv_clear(t.id, v_from);
@@ -239,6 +256,9 @@ BEGIN
 
   -- Intenciones, en orden. Cada flujo devuelve NULL si no le corresponde.
   res := coalesce(res, bot_rf02_start_agent(ctx));
+  IF res IS NULL AND (bot_feature(ctx, 'rf10') OR bot_feature(ctx, 'rf09')) THEN res := bot_rf10_start(ctx); END IF;
+  IF res IS NULL AND bot_feature(ctx, 'rf08') THEN res := bot_rf08_start(ctx); END IF;
+  IF res IS NULL AND bot_feature(ctx, 'rf11') THEN res := bot_rf11_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf03') THEN res := bot_rf03_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf04') THEN res := bot_rf04_start(ctx); END IF;
   res := coalesce(res, bot_rf01_faq(ctx), bot_greeting(ctx), bot_rf02_fallback(ctx));

@@ -1,0 +1,624 @@
+{
+ "id": "rf08Baja00000001",
+ "name": "RF08-BAJA Cancelación de suscripción",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "suscripcion",
+    "options": {},
+    "responseMode": "responseNode"
+   },
+   "id": "49abc4df-747b-53c4-a9a6-01115919c5dd",
+   "name": "Página de la suscripción",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "2c8631fc-a46c-596c-9328-9c4624f296bb"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf08_page($1) AS page;",
+    "options": {
+     "queryReplacement": "={{ [ $json.query.t || '' ] }}"
+    }
+   },
+   "id": "ec313ce8-8e75-5e52-8f9f-5532b5be8048",
+   "name": "Armar página",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    0
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $json.page }}",
+    "options": {
+     "responseHeaders": {
+      "entries": [
+       {
+        "name": "Content-Type",
+        "value": "text/html; charset=utf-8"
+       },
+       {
+        "name": "Cache-Control",
+        "value": "no-store"
+       },
+       {
+        "name": "X-Robots-Tag",
+        "value": "noindex"
+       }
+      ]
+     }
+    }
+   },
+   "id": "d8fec0c2-ab0c-599a-b5e1-a6eb3be834b0",
+   "name": "Mostrar página",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "suscripcion-baja",
+    "options": {},
+    "responseMode": "responseNode"
+   },
+   "id": "70d8e369-c2ad-5b99-91ec-e9d173d9d4b3",
+   "name": "Confirmación de baja",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    260
+   ],
+   "webhookId": "2318e3ce-5047-5d6e-bc9c-0f643ff38432"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf08_cancel($1) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ ($json.body && $json.body.t) || '' ] }}"
+    }
+   },
+   "id": "ca890869-45b3-5172-99bc-d5bc541e2d48",
+   "name": "Confirmar baja",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    260
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "4bb3755f-f88a-5393-940b-789c75c0c2e3",
+          "leftValue": "={{ $json.r.provider }}",
+          "rightValue": "mercadopago",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mercadopago"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3188f3da-5375-5b42-bf9d-dd6c81829940",
+          "leftValue": "={{ $json.r.provider }}",
+          "rightValue": "stripe",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "stripe"
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "sin_cobros"
+    }
+   },
+   "id": "596816e9-2b84-542c-8f05-dce07b18116e",
+   "name": "Según pasarela",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3.2,
+   "position": [
+    480,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "method": "PUT",
+    "url": "=https://api.mercadopago.com/preapproval/{{ $json.r.provider_ref }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.r.provider_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "{\"status\": \"cancelled\"}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "c9f3d94a-605a-5cc5-8287-dbb67f195891",
+   "name": "Mercado Pago: cancelar preapproval",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    720,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "method": "DELETE",
+    "url": "=https://api.stripe.com/v1/subscriptions/{{ $json.r.provider_ref }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.r.provider_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "3f3c82eb-40ec-589e-93c0-554eb95681a8",
+   "name": "Stripe: cancelar suscripción",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    720,
+    260
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "91a627c9-cc27-5cb3-a006-90c31a15e805",
+   "name": "Sin cobros que detener",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    720,
+    380
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Resultado de detener los cobros en la pasarela\nconst r = $('Confirmar baja').item.json.r;\nconst j = $json; let ok = true, detail = '';\nif (j.statusCode !== undefined) { ok = j.statusCode >= 200 && j.statusCode < 300; detail = ok ? '' : 'HTTP ' + j.statusCode + ': ' + JSON.stringify(j.body).slice(0, 300); }\nreturn { json: { subscription_id: r.subscription_id || '', ok, detail, cancelled_now: !!(r.ok && !r.already), tenant_id: r.tenant_id || '',\n                 notify_text: r.notify_text || '' } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "4cf00899-b68f-5cee-aa2e-1a4449d0509d",
+   "name": "Resultado de la baja",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    960,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $('Confirmar baja').item.json.r.page }}",
+    "options": {
+     "responseHeaders": {
+      "entries": [
+       {
+        "name": "Content-Type",
+        "value": "text/html; charset=utf-8"
+       },
+       {
+        "name": "Cache-Control",
+        "value": "no-store"
+       },
+       {
+        "name": "X-Robots-Tag",
+        "value": "noindex"
+       }
+      ]
+     }
+    }
+   },
+   "id": "3a5b55c8-2f33-5d67-a6d9-d04c8d06519e",
+   "name": "Mostrar confirmación",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1180,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "23a55ed2-b9f0-582a-b9d4-4360262c41f3",
+       "leftValue": "={{ $json.cancelled_now }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "f2bebdfd-5e01-5338-bf22-dd90c03dc07a",
+   "name": "¿Se canceló ahora?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1400,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf08_provider_result($1::uuid, $2::boolean, $3);",
+    "options": {
+     "queryReplacement": "={{ [ $json.subscription_id, $json.ok, $json.detail ] }}"
+    }
+   },
+   "id": "6e2905d5-f5f9-591d-b40e-b29b89a3241d",
+   "name": "Registrar en la suscripción",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1620,
+    140
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core04Email00001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c6d94ecd-684b-5533-bd3f-6558a308d36e",
+   "name": "CORE-04 Enviar email",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1840,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_notify_payload($1::uuid, jsonb_build_object('type', 'subscription_cancelled', 'text', $2::text)) AS e;",
+    "options": {
+     "queryReplacement": "={{ [ $('Resultado de la baja').item.json.tenant_id, $('Resultado de la baja').item.json.notify_text ] }}"
+    }
+   },
+   "id": "38b99bea-4931-56f4-ad85-147c48aabcce",
+   "name": "Aviso a ventas",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1620,
+    340
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: $json.e };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "49669b78-ea01-5a75-a182-2fa1083d1ea2",
+   "name": "Evento de baja",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1840,
+    340
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "rf02Notify000001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "5d8054c5-b75f-551d-85fd-2a069e8cc4be",
+   "name": "RF02-NOTIFY Aviso a ventas",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    2060,
+    340
+   ]
+  }
+ ],
+ "connections": {
+  "Página de la suscripción": {
+   "main": [
+    [
+     {
+      "node": "Armar página",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Armar página": {
+   "main": [
+    [
+     {
+      "node": "Mostrar página",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Confirmación de baja": {
+   "main": [
+    [
+     {
+      "node": "Confirmar baja",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Confirmar baja": {
+   "main": [
+    [
+     {
+      "node": "Según pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Según pasarela": {
+   "main": [
+    [
+     {
+      "node": "Mercado Pago: cancelar preapproval",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stripe: cancelar suscripción",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Sin cobros que detener",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mercado Pago: cancelar preapproval": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la baja",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: cancelar suscripción": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la baja",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sin cobros que detener": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la baja",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resultado de la baja": {
+   "main": [
+    [
+     {
+      "node": "Mostrar confirmación",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mostrar confirmación": {
+   "main": [
+    [
+     {
+      "node": "¿Se canceló ahora?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Se canceló ahora?": {
+   "main": [
+    [
+     {
+      "node": "Registrar en la suscripción",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Aviso a ventas",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Registrar en la suscripción": {
+   "main": [
+    [
+     {
+      "node": "CORE-04 Enviar email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Aviso a ventas": {
+   "main": [
+    [
+     {
+      "node": "Evento de baja",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Evento de baja": {
+   "main": [
+    [
+     {
+      "node": "RF02-NOTIFY Aviso a ventas",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

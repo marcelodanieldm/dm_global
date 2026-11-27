@@ -1,0 +1,125 @@
+{
+ "id": "rf06Remind000001",
+ "name": "RF06-REMIND Recordatorio de pago",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "days",
+       "daysInterval": 1,
+       "triggerAtHour": 9
+      }
+     ]
+    }
+   },
+   "id": "b1181a0f-0be3-5349-818b-b56c3b919143",
+   "name": "Todos los días 9 h",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "7af8e396-1c64-5184-8fd2-01a35872ccdf",
+   "name": "Revisar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_subscriptions_expire() AS vencimientos, bot_rf06_due() AS emails;",
+    "options": {}
+   },
+   "id": "08337dd2-deca-570d-9b2b-9f3a6164bd9f",
+   "name": "Vencimientos y recordatorios",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "executeOnce": true
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core04Email00001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c6d94ecd-684b-5533-bd3f-6558a308d36e",
+   "name": "CORE-04 Enviar email",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    80
+   ]
+  }
+ ],
+ "connections": {
+  "Todos los días 9 h": {
+   "main": [
+    [
+     {
+      "node": "Vencimientos y recordatorios",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Revisar ahora": {
+   "main": [
+    [
+     {
+      "node": "Vencimientos y recordatorios",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Vencimientos y recordatorios": {
+   "main": [
+    [
+     {
+      "node": "CORE-04 Enviar email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

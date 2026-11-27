@@ -1,0 +1,333 @@
+{
+ "id": "rf11Orders000001",
+ "name": "RF11-ORDERS Pedidos para seguimiento",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "rf11-pedido",
+    "options": {}
+   },
+   "id": "9c5c16e0-2e38-5d6c-aa0e-c1f926b0cf43",
+   "name": "Pedido nuevo o actualizado",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "cde8ceb3-31bf-5d14-9732-31633666f522"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Tiendanube manda solo {store_id, event, id}: hay que pedir el pedido a su API. Otro sistema manda el pedido completo.\nconst b = $json.body || {};\nconst tn = !!(b.store_id && b.event && b.id && /^order\\//.test(b.event));\nreturn { json: { key: ($json.query && $json.query.key) || '', tiendanube: tn, order_id: tn ? String(b.id) : '', body: b } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "72577d22-33cc-52ec-a199-efe2731faf11",
+   "name": "Leer aviso",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    240,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "f192afbc-6fe9-5486-bf97-ea112eff4119",
+       "leftValue": "={{ $json.tiendanube }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "4c9a5d9c-892c-5261-9cea-4dc342ccbc2c",
+   "name": "¿Es de Tiendanube?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    460,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_hook_context($1, 'tiendanube') AS c;",
+    "options": {
+     "queryReplacement": "={{ [ $json.key ] }}"
+    }
+   },
+   "id": "b34d320f-d818-5b33-8af6-7b9937976528",
+   "name": "Datos de la tienda",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    680,
+    -100
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "808ba064-4c86-5bdd-ab80-c9329e3d1dff",
+       "leftValue": "={{ !!($json.c && $json.c.store_id) }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "08349d40-9980-58c8-8486-1ea4d371094a",
+   "name": "¿Tienda configurada?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    900,
+    -100
+   ]
+  },
+  {
+   "parameters": {
+    "url": "=https://api.tiendanube.com/v1/{{ $json.c.store_id }}/orders/{{ $('Leer aviso').item.json.order_id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authentication",
+       "value": "=bearer {{ $json.c.access_token }}"
+      },
+      {
+       "name": "User-Agent",
+       "value": "={{ $json.c.user_agent }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "306f5784-77ec-57e9-a978-bd818226ed7f",
+   "name": "Tiendanube: leer pedido",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1120,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Pedido de Tiendanube → formato normalizado\nconst o = $json.body || {}, src = $('Leer aviso').item.json, ctx = $('Datos de la tienda').item.json.c;\nif ($json.statusCode !== 200) return { json: { tenant_id: ctx.tenant_id, order: null, error: 'HTTP ' + $json.statusCode } };\nconst name = v => (v && typeof v === 'object') ? (v.es || Object.values(v)[0] || '') : (v || '');\nreturn { json: { tenant_id: ctx.tenant_id, error: null, order: {\n  source: 'tiendanube', external_id: String(o.id), number: String(o.number || o.id),\n  name: o.contact_name || (o.customer && o.customer.name) || '', email: o.contact_email || (o.customer && o.customer.email) || '',\n  phone: o.contact_phone || (o.customer && o.customer.phone) || '', tax_id: o.contact_identification || (o.customer && o.customer.identification) || '',\n  status: o.status, payment_status: o.payment_status, shipping_status: o.shipping_status,\n  tracking_number: o.shipping_tracking_number || '', tracking_url: o.shipping_tracking_url || '',\n  total: o.total, currency: o.currency || 'ARS', created_at: o.created_at,\n  items: (o.products || []).map(p => ({ name: name(p.name), quantity: Number(p.quantity || 1), price: Number(p.price || 0) })) } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "ef5c2353-fee5-5d61-91bb-956ad1a9f2b5",
+   "name": "Normalizar pedido",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1340,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf11_upsert_order($1::uuid, $2::jsonb) AS id WHERE $2 <> 'null';",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, JSON.stringify($json.order) ] }}"
+    }
+   },
+   "id": "f9eee858-33b7-50c8-a70c-b6cf6e7a7bad",
+   "name": "Guardar pedido",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1560,
+    -160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {},
+   "id": "927703cc-cbb9-5793-9eae-d70c7a9f6afc",
+   "name": "Clave inválida o tienda sin configurar",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    1120,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf11_ingest($1, $2::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.key, JSON.stringify($json.body) ] }}"
+    }
+   },
+   "id": "2dc2ff41-dd00-54fe-8563-2c416bc0936b",
+   "name": "Guardar pedido recibido",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    680,
+    120
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Pedido nuevo o actualizado": {
+   "main": [
+    [
+     {
+      "node": "Leer aviso",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Leer aviso": {
+   "main": [
+    [
+     {
+      "node": "¿Es de Tiendanube?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Es de Tiendanube?": {
+   "main": [
+    [
+     {
+      "node": "Datos de la tienda",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Guardar pedido recibido",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Datos de la tienda": {
+   "main": [
+    [
+     {
+      "node": "¿Tienda configurada?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Tienda configurada?": {
+   "main": [
+    [
+     {
+      "node": "Tiendanube: leer pedido",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Clave inválida o tienda sin configurar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tiendanube: leer pedido": {
+   "main": [
+    [
+     {
+      "node": "Normalizar pedido",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalizar pedido": {
+   "main": [
+    [
+     {
+      "node": "Guardar pedido",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

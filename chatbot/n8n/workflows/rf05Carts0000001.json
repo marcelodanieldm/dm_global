@@ -1,0 +1,350 @@
+{
+ "id": "rf05Carts0000001",
+ "name": "RF05-REMIND Carrito abandonado",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 30
+      }
+     ]
+    }
+   },
+   "id": "4237ec82-ee1b-5f82-b766-b6f6a69baee0",
+   "name": "Cada 30 minutos",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "7af8e396-1c64-5184-8fd2-01a35872ccdf",
+   "name": "Revisar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT * FROM bot_rf05_tiendanube_sources();",
+    "options": {}
+   },
+   "id": "bde76532-2008-59b4-9b55-da27a47ef81a",
+   "name": "Tiendas Tiendanube",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    -60
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://api.tiendanube.com/v1/{{ $json.store_id }}/checkouts",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "per_page",
+       "value": "200"
+      },
+      {
+       "name": "created_at_min",
+       "value": "={{ $json.since }}"
+      }
+     ]
+    },
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authentication",
+       "value": "=bearer {{ $json.access_token }}"
+      },
+      {
+       "name": "User-Agent",
+       "value": "={{ $json.user_agent }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 30000
+    }
+   },
+   "id": "6891d069-c3c6-5579-be72-d8b256bd6198",
+   "name": "Tiendanube: carritos abandonados",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    480,
+    -60
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Carritos abandonados de Tiendanube → formato normalizado\nconst src = $('Tiendas Tiendanube').item.json;\nconst name = v => (v && typeof v === 'object') ? (v.es || Object.values(v)[0] || '') : (v || '');\nconst list = $json.statusCode === 200 && Array.isArray($json.body) ? $json.body : [];\nconst carts = list.map(c => ({\n  source: 'tiendanube', external_id: String(c.id), name: c.contact_name || (c.customer && c.customer.name) || '',\n  email: c.contact_email || (c.customer && c.customer.email) || '', phone: c.contact_phone || '',\n  items: (c.products || []).map(p => ({ name: name(p.name), quantity: Number(p.quantity || 1), price: Number(p.price || 0) })),\n  total: c.total, currency: c.currency || 'ARS', checkout_url: c.abandoned_checkout_url || '',\n  updated_at: c.updated_at || c.created_at, completed: !!c.completed_at }));\nreturn { json: { tenant_id: src.tenant_id, carts, error: $json.statusCode === 200 ? null : 'HTTP ' + $json.statusCode } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "3fa62a4e-e039-5d68-b3b6-187c6a36c30b",
+   "name": "Normalizar carritos",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    720,
+    -60
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf05_upsert_carts($1::uuid, $2::jsonb) AS n;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, JSON.stringify($json.carts) ] }}"
+    }
+   },
+   "id": "c66bb164-3e42-50ea-8bdd-5616039cbc08",
+   "name": "Guardar carritos",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    960,
+    -60
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf05_due() AS emails;",
+    "options": {}
+   },
+   "id": "afc298f3-939d-5f54-99c1-2117069aa93c",
+   "name": "Programar recordatorios",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "executeOnce": true
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core04Email00001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c6d94ecd-684b-5533-bd3f-6558a308d36e",
+   "name": "CORE-04 Enviar email",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "rf05-carrito",
+    "options": {},
+    "responseMode": "responseNode"
+   },
+   "id": "0b8ab1f0-13b9-5718-814b-0841345d7c84",
+   "name": "Carrito desde la tienda",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    380
+   ],
+   "webhookId": "b2483ce5-bbef-5b95-9e0f-de4d6be06830"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf05_ingest($1, $2::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.query.key || '', JSON.stringify($json.body || {}) ] }}"
+    }
+   },
+   "id": "be39981d-bf6b-5408-b0e3-4346b9a502fc",
+   "name": "Guardar carrito recibido",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    380
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ JSON.stringify($json.r) }}",
+    "options": {}
+   },
+   "id": "b234f41a-39ef-528f-ad2b-430ce1af2b41",
+   "name": "Responder",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    380
+   ]
+  }
+ ],
+ "connections": {
+  "Cada 30 minutos": {
+   "main": [
+    [
+     {
+      "node": "Tiendas Tiendanube",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Programar recordatorios",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Revisar ahora": {
+   "main": [
+    [
+     {
+      "node": "Tiendas Tiendanube",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Programar recordatorios",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tiendas Tiendanube": {
+   "main": [
+    [
+     {
+      "node": "Tiendanube: carritos abandonados",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tiendanube: carritos abandonados": {
+   "main": [
+    [
+     {
+      "node": "Normalizar carritos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalizar carritos": {
+   "main": [
+    [
+     {
+      "node": "Guardar carritos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Programar recordatorios": {
+   "main": [
+    [
+     {
+      "node": "CORE-04 Enviar email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Carrito desde la tienda": {
+   "main": [
+    [
+     {
+      "node": "Guardar carrito recibido",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Guardar carrito recibido": {
+   "main": [
+    [
+     {
+      "node": "Responder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

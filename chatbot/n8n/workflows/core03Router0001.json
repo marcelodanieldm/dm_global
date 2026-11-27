@@ -108,6 +108,52 @@
        },
        "renameOutput": true,
        "outputKey": "checkout_requested"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "1bf7e3c9-25bd-5640-9ff5-1ccbbb31d0dd",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "booking_cancelled",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "booking_cancelled"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "7a44708a-6cec-5c63-ab66-3c95f085ed18",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "ticket_created",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "ticket_created"
       }
      ]
     },
@@ -202,6 +248,44 @@
    ]
   },
   {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "rf02Notify000001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "8b14d391-91ea-5aa8-91ae-af2769efe481",
+   "name": "RF02-NOTIFY (reserva anulada)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    320
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "rf02Notify000001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "aa62e2b4-d670-5178-81a8-8ecfb2301f4c",
+   "name": "RF02-NOTIFY (ticket)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    440
+   ]
+  },
+  {
    "parameters": {},
    "id": "12320ff5-31b3-5cc3-a456-b90d430da05f",
    "name": "Evento sin flujo asignado",
@@ -209,7 +293,7 @@
    "typeVersion": 1,
    "position": [
     480,
-    320
+    560
    ]
   }
  ],
@@ -251,6 +335,20 @@
     [
      {
       "node": "RF04-CHECKOUT Link de pago",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF02-NOTIFY (reserva anulada)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF02-NOTIFY (ticket)",
       "type": "main",
       "index": 0
      }

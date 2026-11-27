@@ -1,0 +1,362 @@
+{
+ "id": "core04Email00001",
+ "name": "CORE-04 Enviar email",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "871c68d9-012a-5cc8-bcf0-5b337ec4f05a",
+   "name": "Llamado desde otro workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 5
+      }
+     ]
+    }
+   },
+   "id": "9a25e875-2428-5b2a-aea3-777a4ece0637",
+   "name": "Cada 5 minutos",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    160
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "0ec9520e-1db1-5007-94f7-2f9a16270cbf",
+   "name": "Enviar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    320
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT * FROM bot_email_claim(50);",
+    "options": {}
+   },
+   "id": "11b3b255-d0e4-506f-9e3a-1a06e5a98d16",
+   "name": "Emails pendientes",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "executeOnce": true
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3f363f68-955a-5c2f-ad7c-eb2bda7c4795",
+          "leftValue": "={{ $json.provider }}",
+          "rightValue": "sendgrid",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "sendgrid"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "ef248ed7-2de8-5dfc-933b-94bf7de77759",
+          "leftValue": "={{ $json.provider }}",
+          "rightValue": "mock",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mock"
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "otro"
+    }
+   },
+   "id": "bfa4b5ab-7f1a-5170-ab46-159f9cc03d7f",
+   "name": "Según proveedor",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3.2,
+   "position": [
+    460,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.sendgrid.com/v3/mail/send",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.api_key }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({\n  personalizations: [{ to: [Object.assign({ email: $json.to_email }, $json.to_name ? { name: $json.to_name } : {})] }],\n  from: { email: $json.from_email, name: $json.from_name },\n  subject: $json.subject,\n  content: [{ type: 'text/plain', value: $json.text }, { type: 'text/html', value: $json.html }],\n  custom_args: { outbox_id: $json.id }\n}, $json.reply_to ? { reply_to: { email: $json.reply_to } } : {})) }}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "639601d7-10cc-5156-8ef9-f3895314f5f0",
+   "name": "SendGrid: enviar",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    700,
+    40
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// SendGrid responde 202 si aceptó el envío\nconst e = $('Emails pendientes').item.json;\nconst ok = $json.statusCode === 202 || $json.statusCode === 200;\nconst h = $json.headers || {};\nreturn { json: { id: e.id, ok, ref: h['x-message-id'] || '', error: ok ? '' : 'HTTP ' + $json.statusCode + ': ' + JSON.stringify($json.body).slice(0, 500) } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "00e106fe-9f96-5eac-9c9f-50cfd22a2545",
+   "name": "SendGrid: resultado",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    920,
+    40
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Proveedor simulado: el email queda registrado como enviado (para pruebas)\nreturn { json: { id: $json.id, ok: true, ref: 'mock-' + $json.id, error: '' } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "938ce05e-eff9-5226-b491-e8fecde95eda",
+   "name": "Simulado: marcar enviado",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    180
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: { id: $json.id, ok: false, ref: '', error: 'proveedor de email no soportado: ' + $json.provider } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "3ef8ccfb-1bbb-5761-a6be-2cd699af95c4",
+   "name": "Proveedor desconocido",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    320
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_email_result($1::uuid, $2::boolean, $3, $4);",
+    "options": {
+     "queryReplacement": "={{ [ $json.id, $json.ok, $json.ref, $json.error ] }}"
+    }
+   },
+   "id": "e13a56f5-23f8-503c-bf67-a0151948960c",
+   "name": "Registrar resultado",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1160,
+    160
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Llamado desde otro workflow": {
+   "main": [
+    [
+     {
+      "node": "Emails pendientes",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Cada 5 minutos": {
+   "main": [
+    [
+     {
+      "node": "Emails pendientes",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Enviar ahora": {
+   "main": [
+    [
+     {
+      "node": "Emails pendientes",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Emails pendientes": {
+   "main": [
+    [
+     {
+      "node": "Según proveedor",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Según proveedor": {
+   "main": [
+    [
+     {
+      "node": "SendGrid: enviar",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Simulado: marcar enviado",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Proveedor desconocido",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "SendGrid: enviar": {
+   "main": [
+    [
+     {
+      "node": "SendGrid: resultado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "SendGrid: resultado": {
+   "main": [
+    [
+     {
+      "node": "Registrar resultado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Simulado: marcar enviado": {
+   "main": [
+    [
+     {
+      "node": "Registrar resultado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Proveedor desconocido": {
+   "main": [
+    [
+     {
+      "node": "Registrar resultado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}
