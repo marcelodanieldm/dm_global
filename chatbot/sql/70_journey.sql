@@ -199,6 +199,11 @@ DECLARE
   v_t UUID := (ctx->>'tenant_id')::uuid; v_from TEXT := ctx->>'from'; v_raw TEXT := trim(ctx->>'raw');
   v_state TEXT := ctx->>'state'; v_data JSONB := coalesce(ctx->'data', '{}'); v_pick TEXT; v_cust UUID; v_order UUID; sv RECORD;
 BEGIN
+  -- Un servicio tocado en una lista anterior vuelve a empezar la contratación con ese servicio
+  IF ctx->>'reply_id' ~ '^sv:[0-9a-f-]{36}$' AND v_state IN ('j_name', 'j_email', 'j_confirm')
+     AND EXISTS (SELECT 1 FROM services WHERE id = substr(ctx->>'reply_id', 4)::uuid AND tenant_id = v_t AND is_active) THEN
+    RETURN bot_journey_pick_service(ctx, substr(ctx->>'reply_id', 4)::uuid);
+  END IF;
   IF v_state = 'j_service' THEN
     v_pick := bot_pick(ctx, v_data->'options');
     IF v_pick IS NULL THEN
@@ -207,7 +212,7 @@ BEGIN
     RETURN bot_journey_pick_service(ctx, substr(v_pick, 4)::uuid);
 
   ELSIF v_state = 'j_name' THEN
-    IF length(v_raw) < 3 THEN
+    IF length(v_raw) < 3 OR ctx->>'reply_id' IS NOT NULL THEN
       RETURN bot_reply('journey_flow', jsonb_build_array(bot_msg_text('¿Me pasás el nombre completo, por favor?')));
     END IF;
     PERFORM bot_conv_set(v_t, v_from, 'j_email', v_data || jsonb_build_object('name', left(v_raw, 150)));
