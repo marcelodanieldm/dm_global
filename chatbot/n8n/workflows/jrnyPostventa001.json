@@ -1,0 +1,149 @@
+{
+ "id": "jrnyPostventa001",
+ "name": "JOURNEY-POSTVENTA Encuesta de satisfacción",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 30
+      }
+     ]
+    }
+   },
+   "id": "4237ec82-ee1b-5f82-b766-b6f6a69baee0",
+   "name": "Cada 30 minutos",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "7af8e396-1c64-5184-8fd2-01a35872ccdf",
+   "name": "Revisar ahora",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT r FROM bot_journey_survey_due() r;",
+    "options": {}
+   },
+   "id": "d9333e73-3289-50c0-afe8-5be447848d01",
+   "name": "Encuestas a enviar",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    240,
+    80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "executeOnce": true
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: $json.r };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "b40cb4c0-1c98-54e6-9fbc-729f20d2c2c6",
+   "name": "Mensaje de encuesta",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    480,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    720,
+    80
+   ]
+  }
+ ],
+ "connections": {
+  "Cada 30 minutos": {
+   "main": [
+    [
+     {
+      "node": "Encuestas a enviar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Revisar ahora": {
+   "main": [
+    [
+     {
+      "node": "Encuestas a enviar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Encuestas a enviar": {
+   "main": [
+    [
+     {
+      "node": "Mensaje de encuesta",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje de encuesta": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

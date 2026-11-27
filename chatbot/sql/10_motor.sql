@@ -176,6 +176,11 @@ DO $$ BEGIN
     CREATE FUNCTION bot_rf10_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
     CREATE FUNCTION bot_rf10_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
   END IF;
+  IF to_regprocedure('bot_journey_start(jsonb)') IS NULL THEN
+    CREATE FUNCTION bot_journey_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+    CREATE FUNCTION bot_journey_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+    CREATE FUNCTION bot_journey_menu(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
+  END IF;
   IF to_regprocedure('bot_rf11_start(jsonb)') IS NULL THEN
     CREATE FUNCTION bot_rf11_start(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
     CREATE FUNCTION bot_rf11_step(ctx JSONB) RETURNS JSONB LANGUAGE sql AS 'SELECT NULL::jsonb';
@@ -235,8 +240,10 @@ BEGIN
 
   IF c.state IS NOT NULL AND (ctx->>'msg') ~ '^(cancelar|salir|menu|reiniciar|basta)$' THEN
     PERFORM bot_conv_clear(t.id, v_from);
-    res := bot_reply('cancelled', jsonb_build_array(bot_msg_text(v_settings->>'no_lead_text')));
-  ELSIF c.state IS NOT NULL AND coalesce(ctx->>'reply_id', '') ~ '^rm:' THEN
+    IF bot_feature(ctx, 'journey') THEN res := bot_journey_menu(ctx); END IF;
+    res := coalesce(res, bot_reply('cancelled', jsonb_build_array(bot_msg_text(v_settings->>'no_lead_text'))));
+  ELSIF c.state IS NOT NULL AND (coalesce(ctx->>'reply_id', '') ~ '^(rm|jr):'
+                                 OR (coalesce(ctx->>'reply_id', '') ~ '^j:' AND c.state NOT LIKE 'j\_%')) THEN
     -- Tocó un botón del recordatorio (RF-09) en medio de otra conversación: manda el botón
     PERFORM bot_conv_clear(t.id, v_from);
     ctx := ctx || jsonb_build_object('state', NULL, 'data', '{}'::jsonb);
@@ -247,6 +254,7 @@ BEGIN
              WHEN c.state LIKE 'sub\_%' THEN bot_rf04_step(ctx)
              WHEN c.state LIKE 'rbk\_%' THEN bot_rf10_step(ctx)
              WHEN c.state LIKE 'order\_%' OR c.state LIKE 'support\_%' THEN bot_rf11_step(ctx)
+             WHEN c.state LIKE 'j\_%' THEN bot_journey_step(ctx)
            END;
     IF res IS NULL THEN
       PERFORM bot_conv_clear(t.id, v_from);
@@ -258,6 +266,7 @@ BEGIN
   res := coalesce(res, bot_rf02_start_agent(ctx));
   IF res IS NULL AND (bot_feature(ctx, 'rf10') OR bot_feature(ctx, 'rf09')) THEN res := bot_rf10_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf08') THEN res := bot_rf08_start(ctx); END IF;
+  IF res IS NULL AND bot_feature(ctx, 'journey') THEN res := bot_journey_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf11') THEN res := bot_rf11_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf03') THEN res := bot_rf03_start(ctx); END IF;
   IF res IS NULL AND bot_feature(ctx, 'rf04') THEN res := bot_rf04_start(ctx); END IF;

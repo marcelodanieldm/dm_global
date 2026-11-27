@@ -1,0 +1,736 @@
+{
+ "id": "jrnyPagos0000001",
+ "name": "JOURNEY-PAGOS Confirmación de pago del servicio",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "servicio-mock",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "402b37e2-e458-5045-a7f3-9bec1952e694",
+   "name": "Mock: link abierto",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    -200
+   ],
+   "webhookId": "832ac15d-b3c6-5192-8c02-279e061302f7"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_journey_paid(pi.tenant_id, 'mock', 'mock-' || $2, $2::uuid, 'mock-' || $2, '{}') AS r\nFROM payment_integrations pi WHERE pi.tenant_id = $1::uuid AND pi.provider = 'mock' AND pi.is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.query.tenant || '00000000-0000-0000-0000-000000000000', $json.query.ref || '00000000-0000-0000-0000-000000000000' ] }}"
+    }
+   },
+   "id": "8a573c57-daad-5ca5-97a2-ec577dd4d44b",
+   "name": "Pagar (simulado)",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    -200
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "alwaysOutputData": true
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $json.r && $json.r.ok ? 'Pago simulado: la compra quedó pagada. Ya podés volver a WhatsApp.' : 'Link de pago simulado inválido.' }}",
+    "options": {}
+   },
+   "id": "907f310a-0fca-5b37-8351-27af4bbe8008",
+   "name": "Responder (simulado)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    -200
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "servicio-mercadopago",
+    "options": {}
+   },
+   "id": "dff51fd5-584f-5b8e-a52a-d36a9df0c07d",
+   "name": "Mercado Pago: aviso de pago",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    20
+   ],
+   "webhookId": "1bcc9d78-459b-57f7-a09f-f580c3605511"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Mercado Pago avisa pagos (topic/type payment). Se vuelve a leer el pago con la API: no se confía en el aviso\nconst q = $json.query || {}, b = $json.body || {};\nconst type = b.type || b.topic || q.type || q.topic || '';\nconst id = (b.data && b.data.id) || q['data.id'] || q.id || '';\nreturn { json: { tenant_id: q.tenant || '', type, id: String(id), relevant: type === 'payment' && !!id && !!q.tenant } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "037bf1e6-d338-5710-bce5-ad55ac1521c5",
+   "name": "MP: leer aviso de pago",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "0e9c0282-697b-51a6-9028-d7b0c6b86509",
+       "leftValue": "={{ $json.relevant }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "cab3ea95-ef4c-50f1-965e-b597efed3c71",
+   "name": "¿Es un pago?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT access_token, $2::text AS id, $1::text AS tenant_id FROM payment_integrations WHERE tenant_id = $1::uuid AND provider = $3 AND is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.id, 'mercadopago' ] }}"
+    }
+   },
+   "id": "2cede3e8-e24f-5a92-9ca1-47f5b9f7bec9",
+   "name": "MP: token del cliente",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    660,
+    20
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://api.mercadopago.com/v1/payments/{{ $json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "01163fff-210e-5516-a05e-533431e79b03",
+   "name": "MP: consultar pago",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const b = $json.body || {}, src = $('MP: leer aviso de pago').item.json;\nconst ok = $json.statusCode === 200 && b.status === 'approved' && !!b.external_reference;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-pay-' + b.id,\n  order_id: b.external_reference || '', ref: String(b.id || ''), payload: { id: b.id, status: b.status, amount: b.transaction_amount } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "bbdf97c8-5534-5ee1-b7e9-7a7f805581a3",
+   "name": "MP: validar pago",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "servicio-stripe",
+    "options": {}
+   },
+   "id": "45f1bc9a-f4d1-5b83-a79c-737d9cf850c0",
+   "name": "Stripe: evento de pago",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    240
+   ],
+   "webhookId": "19380da5-7082-5369-8e38-f9f0c0589d91"
+  },
+  {
+   "parameters": {
+    "jsCode": "const q = $json.query || {}, b = $json.body || {};\nconst obj = (b.data && b.data.object) || {};\nreturn { json: { tenant_id: q.tenant || '', id: obj.id || '', relevant: b.type === 'checkout.session.completed' && !!obj.id && !!q.tenant } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "f7c80cf7-ca3b-5259-82f2-ebf7a7716ed7",
+   "name": "Stripe: leer evento de pago",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "4010efb0-847c-59fc-b907-b4b7aebacc60",
+       "leftValue": "={{ $json.relevant }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "83e82783-06a8-58e5-b559-541ea6895264",
+   "name": "¿Checkout pagado?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT access_token, $2::text AS id, $1::text AS tenant_id FROM payment_integrations WHERE tenant_id = $1::uuid AND provider = $3 AND is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.id, 'stripe' ] }}"
+    }
+   },
+   "id": "09fb8c6e-4061-58d0-978d-9a5305cf2ddb",
+   "name": "Stripe: clave del cliente",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    660,
+    240
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://api.stripe.com/v1/checkout/sessions/{{ $json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "69174caf-6d44-5bb1-91d0-988a0797e444",
+   "name": "Stripe: consultar sesión",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const b = $json.body || {}, src = $('Stripe: leer evento de pago').item.json;\nconst order = (b.metadata && b.metadata.service_order_id) || b.client_reference_id || '';\nconst ok = $json.statusCode === 200 && b.mode === 'payment' && b.status === 'complete' && b.payment_status === 'paid' && !!order;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-' + b.id, order_id: order,\n  ref: b.payment_intent || b.id || '', payload: { id: b.id } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "8cf438ea-881c-5100-8cc5-35422502c413",
+   "name": "Stripe: validar pago",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "2a75159c-34ae-5100-8ea6-d5eebe167fcc",
+       "leftValue": "={{ $json.ok }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "2e6554eb-32af-5ab9-b92a-58fcda9a9cb3",
+   "name": "¿Pago válido?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1320,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_journey_paid($1::uuid, $2, $3, $4::uuid, $5, $6::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.provider, $json.event_id, $json.order_id, $json.ref, JSON.stringify($json.payload || {}) ] }}"
+    }
+   },
+   "id": "1e2aafe0-f2b3-555b-95a1-ea96798ecb1c",
+   "name": "Registrar pago",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1540,
+    120
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "18186119-0e9f-582b-80f3-d72356743245",
+       "leftValue": "={{ !!($json.r && $json.r.first_payment) }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "5116d2c2-379c-5ead-af9f-76b906fdc62f",
+   "name": "¿Primer pago?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1760,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Un ítem por mensaje de WhatsApp que devolvió el motor\nreturn ($json.r.wa || []).map(m => ({ json: m }));"
+   },
+   "id": "319da702-42eb-506b-ab40-f3238207e001",
+   "name": "Mensajes al cliente",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1980,
+    -120
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    2200,
+    -120
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core04Email00001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c6d94ecd-684b-5533-bd3f-6558a308d36e",
+   "name": "CORE-04 Enviar email",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1980,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: $('¿Primer pago?').item.json.r.notify };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "38b99bea-4931-56f4-ad85-147c48aabcce",
+   "name": "Aviso a ventas",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1980,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "rf02Notify000001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "5d8054c5-b75f-551d-85fd-2a069e8cc4be",
+   "name": "RF02-NOTIFY Aviso a ventas",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    2200,
+    160
+   ]
+  }
+ ],
+ "connections": {
+  "Mock: link abierto": {
+   "main": [
+    [
+     {
+      "node": "Pagar (simulado)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Pagar (simulado)": {
+   "main": [
+    [
+     {
+      "node": "Responder (simulado)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Responder (simulado)": {
+   "main": [
+    [
+     {
+      "node": "¿Primer pago?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mercado Pago: aviso de pago": {
+   "main": [
+    [
+     {
+      "node": "MP: leer aviso de pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: leer aviso de pago": {
+   "main": [
+    [
+     {
+      "node": "¿Es un pago?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Es un pago?": {
+   "main": [
+    [
+     {
+      "node": "MP: token del cliente",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: token del cliente": {
+   "main": [
+    [
+     {
+      "node": "MP: consultar pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: consultar pago": {
+   "main": [
+    [
+     {
+      "node": "MP: validar pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: validar pago": {
+   "main": [
+    [
+     {
+      "node": "¿Pago válido?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: evento de pago": {
+   "main": [
+    [
+     {
+      "node": "Stripe: leer evento de pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: leer evento de pago": {
+   "main": [
+    [
+     {
+      "node": "¿Checkout pagado?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Checkout pagado?": {
+   "main": [
+    [
+     {
+      "node": "Stripe: clave del cliente",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: clave del cliente": {
+   "main": [
+    [
+     {
+      "node": "Stripe: consultar sesión",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: consultar sesión": {
+   "main": [
+    [
+     {
+      "node": "Stripe: validar pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: validar pago": {
+   "main": [
+    [
+     {
+      "node": "¿Pago válido?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Pago válido?": {
+   "main": [
+    [
+     {
+      "node": "Registrar pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Registrar pago": {
+   "main": [
+    [
+     {
+      "node": "¿Primer pago?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Primer pago?": {
+   "main": [
+    [
+     {
+      "node": "Mensajes al cliente",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "CORE-04 Enviar email",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Aviso a ventas",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensajes al cliente": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Aviso a ventas": {
+   "main": [
+    [
+     {
+      "node": "RF02-NOTIFY Aviso a ventas",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

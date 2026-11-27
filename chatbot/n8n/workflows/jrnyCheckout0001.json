@@ -1,0 +1,563 @@
+{
+ "id": "jrnyCheckout0001",
+ "name": "JOURNEY-CHECKOUT Link de pago del servicio",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "871c68d9-012a-5cc8-bcf0-5b337ec4f05a",
+   "name": "Llamado desde otro workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_journey_checkout_context($1::uuid) AS c;",
+    "options": {
+     "queryReplacement": "={{ [ $json.order_id ] }}"
+    }
+   },
+   "id": "7d94af6d-400f-53fb-9830-08c7093e6b85",
+   "name": "Datos de la compra",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    0
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "4bb3755f-f88a-5393-940b-789c75c0c2e3",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "mercadopago",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mercadopago"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3188f3da-5375-5b42-bf9d-dd6c81829940",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "stripe",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "stripe"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "ef248ed7-2de8-5dfc-933b-94bf7de77759",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "mock",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mock"
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "sin_pasarela"
+    }
+   },
+   "id": "596816e9-2b84-542c-8f05-dce07b18116e",
+   "name": "Según pasarela",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3.2,
+   "position": [
+    440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.mercadopago.com/checkout/preferences",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.c.provider_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({\n  items: [{ title: $json.c.service.name, quantity: 1, unit_price: Number($json.c.service.price), currency_id: $json.c.service.currency }],\n  external_reference: $json.c.order_id,\n  payer: { email: $json.c.customer.email, name: $json.c.customer.name },\n  notification_url: $json.c.notification_url,\n  back_urls: { success: $json.c.provider_config.success_url || 'https://dmglobal.tech', failure: $json.c.provider_config.back_url || 'https://dmglobal.tech',\n               pending: $json.c.provider_config.back_url || 'https://dmglobal.tech' },\n  statement_descriptor: String($json.c.tenant_name).slice(0, 22)\n}) }}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "bd8a3059-6126-5371-ab04-adc27fc75ec8",
+   "name": "Mercado Pago: crear preferencia",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    700,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.stripe.com/v1/checkout/sessions",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.c.provider_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "form-urlencoded",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "mode",
+       "value": "payment"
+      },
+      {
+       "name": "line_items[0][price_data][currency]",
+       "value": "={{ String($json.c.service.currency).toLowerCase() }}"
+      },
+      {
+       "name": "line_items[0][price_data][product_data][name]",
+       "value": "={{ $json.c.service.name }}"
+      },
+      {
+       "name": "line_items[0][price_data][unit_amount]",
+       "value": "={{ Math.round(Number($json.c.service.price) * 100) }}"
+      },
+      {
+       "name": "line_items[0][quantity]",
+       "value": "1"
+      },
+      {
+       "name": "client_reference_id",
+       "value": "={{ $json.c.order_id }}"
+      },
+      {
+       "name": "customer_email",
+       "value": "={{ $json.c.customer.email }}"
+      },
+      {
+       "name": "metadata[tenant_id]",
+       "value": "={{ $json.c.tenant_id }}"
+      },
+      {
+       "name": "metadata[service_order_id]",
+       "value": "={{ $json.c.order_id }}"
+      },
+      {
+       "name": "success_url",
+       "value": "={{ $json.c.provider_config.success_url || 'https://dmglobal.tech' }}"
+      },
+      {
+       "name": "cancel_url",
+       "value": "={{ $json.c.provider_config.back_url || 'https://dmglobal.tech' }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "efeb96ef-46ed-5bbf-ac7f-732572ccfd31",
+   "name": "Stripe: crear checkout de pago",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    700,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const c = $json.c;\nreturn { json: { url: c.mock_url, ref: 'mock-' + c.order_id } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "0ff25895-0dca-5009-9e31-51d68ae66884",
+   "name": "Simulada: armar link",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    100
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: { error: 'El cliente no tiene pasarela de pago configurada (payment_integrations)' } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "80855c2a-cb43-573e-b7e1-a8d5f8a128e3",
+   "name": "Sin pasarela",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Normaliza la respuesta de la pasarela: {url, ref} o {error}\nconst c = $('Datos de la compra').item.json.c;\nconst j = $json; let url = null, ref = null, error = j.error || null;\nif (!error && j.statusCode !== undefined) {\n  const b = j.body || {};\n  if (j.statusCode >= 200 && j.statusCode < 300) { url = b.init_point || b.url; ref = b.id; }\n  else error = 'HTTP ' + j.statusCode + ': ' + JSON.stringify(b.message || b.error || b).slice(0, 300);\n} else if (!error) { url = j.url; ref = j.ref; }\nif (!url && !error) error = 'La pasarela no devolvió un link de pago';\nreturn { json: { order_id: c.order_id, url, ref, error, phone_number_id: c.phone_number_id, access_token: c.access_token,\n  graph_version: c.graph_version, to: c.to, service: c.service.name, name: c.customer.name, number: c.number } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "8d368cad-4a96-5800-b9b7-8b2b336334d7",
+   "name": "Resultado de la pasarela",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    960,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "64e7dbf7-79ea-5c8b-8c48-811c6d617a7c",
+       "leftValue": "={{ !!$json.url }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "ff15f079-f475-5ae4-988f-6d1b0355f212",
+   "name": "¿Hay link?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1180,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_journey_checkout_created($1::uuid, $2, $3) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.order_id, $json.url, $json.ref || '' ] }}"
+    }
+   },
+   "id": "0fb58c2d-e91a-537e-b086-422977e021d4",
+   "name": "Guardar link",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1400,
+    -80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "jsCode": "const j = $('Resultado de la pasarela').item.json;\nreturn { json: { phone_number_id: j.phone_number_id, access_token: j.access_token, graph_version: j.graph_version, to: j.to,\n  message: { type: 'interactive', interactive: { type: 'cta_url',\n    body: { text: 'Listo, ' + j.name + '. Este es tu link para pagar ' + j.service + ' (compra #' + j.number + '). Cuando se acredite te aviso por acá.' },\n    action: { name: 'cta_url', parameters: { display_text: 'Pagar ahora', url: j.url } } } } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "58113df3-c432-5be6-8164-1af8c2b07843",
+   "name": "Mensaje con link",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1620,
+    -80
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const j = $json;\nreturn { json: { phone_number_id: j.phone_number_id, access_token: j.access_token, graph_version: j.graph_version, to: j.to,\n  message: { type: 'text', text: 'Perdón, no pude generar el link de pago en este momento. Un asesor te va a escribir para completar el alta.' },\n  error: j.error } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "f5049779-92bf-59c8-9b55-0ea96bc10fe1",
+   "name": "Mensaje de error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1400,
+    100
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1840,
+    0
+   ]
+  }
+ ],
+ "connections": {
+  "Llamado desde otro workflow": {
+   "main": [
+    [
+     {
+      "node": "Datos de la compra",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Datos de la compra": {
+   "main": [
+    [
+     {
+      "node": "Según pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Según pasarela": {
+   "main": [
+    [
+     {
+      "node": "Mercado Pago: crear preferencia",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stripe: crear checkout de pago",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Simulada: armar link",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Sin pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mercado Pago: crear preferencia": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: crear checkout de pago": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Simulada: armar link": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sin pasarela": {
+   "main": [
+    [
+     {
+      "node": "Resultado de la pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resultado de la pasarela": {
+   "main": [
+    [
+     {
+      "node": "¿Hay link?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Hay link?": {
+   "main": [
+    [
+     {
+      "node": "Guardar link",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Mensaje de error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Guardar link": {
+   "main": [
+    [
+     {
+      "node": "Mensaje con link",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje con link": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje de error": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

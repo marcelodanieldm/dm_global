@@ -154,6 +154,52 @@
        },
        "renameOutput": true,
        "outputKey": "ticket_created"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "77f31a29-6f01-5585-a16b-c22e560af230",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "service_checkout",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "service_checkout"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "f165a04e-c72d-5dea-b95d-d54b911ca48c",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "survey_alert",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "survey_alert"
       }
      ]
     },
@@ -286,6 +332,44 @@
    ]
   },
   {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "jrnyCheckout0001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "4df1c9f4-97ff-54a2-bc2b-132d28b81afa",
+   "name": "JOURNEY-CHECKOUT Link de pago del servicio",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    560
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "rf02Notify000001",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "60ceade7-f938-5caa-bca3-4895e8b80347",
+   "name": "RF02-NOTIFY (encuesta)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    680
+   ]
+  },
+  {
    "parameters": {},
    "id": "12320ff5-31b3-5cc3-a456-b90d430da05f",
    "name": "Evento sin flujo asignado",
@@ -293,7 +377,7 @@
    "typeVersion": 1,
    "position": [
     480,
-    560
+    800
    ]
   }
  ],
@@ -349,6 +433,20 @@
     [
      {
       "node": "RF02-NOTIFY (ticket)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "JOURNEY-CHECKOUT Link de pago del servicio",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF02-NOTIFY (encuesta)",
       "type": "main",
       "index": 0
      }

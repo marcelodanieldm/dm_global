@@ -190,16 +190,19 @@ BEGIN
 
   ELSIF v_state = 'booking_confirm' THEN
     IF ctx->>'reply_id' = 'bk:change' OR (ctx->>'reply_id' IS NULL AND bot_is_no(ctx->>'raw')) THEN
-      RETURN bot_rf03_ask_day(ctx, (v_data->>'service_id')::uuid, jsonb_build_object('name', v_data->>'name'));
+      RETURN bot_rf03_ask_day(ctx, (v_data->>'service_id')::uuid, jsonb_strip_nulls(jsonb_build_object('name', v_data->>'name', 'order_id', v_data->>'order_id')));
     ELSIF ctx->>'reply_id' = 'bk:confirm' OR bot_is_yes(ctx->>'raw') THEN
       v_id := bot_rf03_book(v_t, (v_data->>'service_id')::uuid, v_from, v_data->>'name', (v_data->>'slot')::timestamptz, v_tz, ctx->>'channel');
       IF v_id IS NULL THEN
-        v_rows := bot_rf03_ask_day(ctx, (v_data->>'service_id')::uuid, jsonb_build_object('name', v_data->>'name'));
+        v_rows := bot_rf03_ask_day(ctx, (v_data->>'service_id')::uuid, jsonb_strip_nulls(jsonb_build_object('name', v_data->>'name', 'order_id', v_data->>'order_id')));
         RETURN v_rows || jsonb_build_object('messages',
           jsonb_build_array(bot_msg_text('Uy, ese horario se acaba de ocupar. Elegí otro, por favor.')) || (v_rows->'messages'));
       END IF;
       SELECT * INTO sv FROM services WHERE id = (v_data->>'service_id')::uuid;
       PERFORM bot_conv_clear(v_t, v_from);
+      IF v_data ? 'order_id' THEN  -- turno de un servicio ya pagado (recorrido de contratación)
+        UPDATE service_orders SET booking_id = v_id WHERE id = (v_data->>'order_id')::uuid AND tenant_id = v_t AND phone = v_from;
+      END IF;
       RETURN bot_reply('booking_created',
         jsonb_build_array(bot_msg_text('✅ ¡Listo, ' || (v_data->>'name') || '! Tu reserva quedó confirmada:' || chr(10) ||
                                        '• ' || sv.name || chr(10) || '• ' || (v_data->>'when') || chr(10) ||

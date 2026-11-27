@@ -335,8 +335,8 @@ BEGIN
     IF length(v_raw) < 5 THEN
       RETURN bot_reply('rf11_support', jsonb_build_array(bot_msg_text('Contame un poco más, así el agente ya sabe cómo ayudarte.')));
     END IF;
-    INSERT INTO support_tickets (tenant_id, phone, order_id, description)
-    VALUES (v_t, v_from, (v_data->>'order_id')::uuid, left(v_raw, 2000)) RETURNING * INTO v_ticket;
+    INSERT INTO support_tickets (tenant_id, phone, order_id, service_order_id, description)
+    VALUES (v_t, v_from, (v_data->>'order_id')::uuid, (v_data->>'service_order_id')::uuid, left(v_raw, 2000)) RETURNING * INTO v_ticket;
     INSERT INTO human_handovers (tenant_id, phone, message, reason) VALUES (v_t, v_from, left(v_raw, 2000), 'support_ticket');
     PERFORM bot_conv_clear(v_t, v_from);
     RETURN bot_reply('rf11_ticket',

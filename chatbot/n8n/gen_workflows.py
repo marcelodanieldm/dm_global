@@ -6,7 +6,8 @@ IDS = {"core01": "core01Whatsapp01", "core02": "core02Enviar0001", "core03": "co
        "sync": "rf01Sync00000001", "notify": "rf02Notify000001",
        "checkout": "rf04Checkout0001", "pagos": "rf04Pagos0000001",
        "core04": "core04Email00001", "rf05": "rf05Carts0000001", "rf06": "rf06Remind000001", "rf07": "rf07Renew0000001",
-       "rf08": "rf08Baja00000001", "rf09": "rf09Remind000001", "rf11": "rf11Orders000001"}
+       "rf08": "rf08Baja00000001", "rf09": "rf09Remind000001", "rf11": "rf11Orders000001",
+       "jcheckout": "jrnyCheckout0001", "jpagos": "jrnyPagos0000001", "jpost": "jrnyPostventa001"}
 def u(seed): return str(uuid.uuid5(uuid.NAMESPACE_URL, "dmglobal-chatbot/" + seed))
 def node(name, typ, ver, params, pos, **kw):
     n = {"parameters": params, "id": u(name), "name": name, "type": typ, "typeVersion": ver, "position": pos}
@@ -146,7 +147,8 @@ def rule(key): return {"conditions": {"options": {"caseSensitive": True, "leftVa
 n = [
  trig([0, 0]),
  node("Según tipo de evento", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule("new_lead"), rule("handover"), rule("booking_created"), rule("checkout_requested"),
-                                                                 rule("booking_cancelled"), rule("ticket_created")]},
+                                                                 rule("booking_cancelled"), rule("ticket_created"),
+                                                                 rule("service_checkout"), rule("survey_alert")]},
       "options": {"fallbackOutput": "extra", "renameFallbackOutput": "otro"}}, [220, 0]),
  call("RF02-NOTIFY (lead)", IDS["notify"], [480, -160]),
  call("RF02-NOTIFY (derivación)", IDS["notify"], [480, -40]),
@@ -154,13 +156,16 @@ n = [
  call("RF04-CHECKOUT Link de pago", IDS["checkout"], [480, 200]),
  call("RF02-NOTIFY (reserva anulada)", IDS["notify"], [480, 320]),
  call("RF02-NOTIFY (ticket)", IDS["notify"], [480, 440]),
- node("Evento sin flujo asignado", "n8n-nodes-base.noOp", 1, {}, [480, 560]),
+ call("JOURNEY-CHECKOUT Link de pago del servicio", IDS["jcheckout"], [480, 560]),
+ call("RF02-NOTIFY (encuesta)", IDS["notify"], [480, 680]),
+ node("Evento sin flujo asignado", "n8n-nodes-base.noOp", 1, {}, [480, 800]),
 ]
 wf("core03", "CORE-03 Router de eventos", n, conn(("Llamado desde otro workflow", "Según tipo de evento"),
    ("Según tipo de evento", "RF02-NOTIFY (lead)", 0), ("Según tipo de evento", "RF02-NOTIFY (derivación)", 1),
    ("Según tipo de evento", "RF02-NOTIFY (reserva)", 2), ("Según tipo de evento", "RF04-CHECKOUT Link de pago", 3),
    ("Según tipo de evento", "RF02-NOTIFY (reserva anulada)", 4), ("Según tipo de evento", "RF02-NOTIFY (ticket)", 5),
-   ("Según tipo de evento", "Evento sin flujo asignado", 6)), [])
+   ("Según tipo de evento", "JOURNEY-CHECKOUT Link de pago del servicio", 6), ("Según tipo de evento", "RF02-NOTIFY (encuesta)", 7),
+   ("Según tipo de evento", "Evento sin flujo asignado", 8)), [])
 
 # ---------- RF02-NOTIFY ----------
 NOTIF = r"""// Mensaje al número de ventas del tenant. Si hay plantilla aprobada se usa (necesaria fuera de la ventana de 24 h)
@@ -626,6 +631,156 @@ wf("rf11", "RF11-ORDERS Pedidos para seguimiento", n, conn(
    ("Datos de la tienda", "¿Tienda configurada?"), ("¿Tienda configurada?", "Tiendanube: leer pedido", 0),
    ("¿Tienda configurada?", "Clave inválida o tienda sin configurar", 1),
    ("Tiendanube: leer pedido", "Normalizar pedido"), ("Normalizar pedido", "Guardar pedido")), [])
+
+
+# ---------- RECORRIDO: JOURNEY-CHECKOUT (pago único de un servicio) ----------
+JMP_BODY = r"""={{ JSON.stringify({
+  items: [{ title: $json.c.service.name, quantity: 1, unit_price: Number($json.c.service.price), currency_id: $json.c.service.currency }],
+  external_reference: $json.c.order_id,
+  payer: { email: $json.c.customer.email, name: $json.c.customer.name },
+  notification_url: $json.c.notification_url,
+  back_urls: { success: $json.c.provider_config.success_url || 'https://dmglobal.tech', failure: $json.c.provider_config.back_url || 'https://dmglobal.tech',
+               pending: $json.c.provider_config.back_url || 'https://dmglobal.tech' },
+  statement_descriptor: String($json.c.tenant_name).slice(0, 22)
+}) }}"""
+JMOCK = r"""const c = $json.c;
+return { json: { url: c.mock_url, ref: 'mock-' + c.order_id } };"""
+JUNIFY = r"""// Normaliza la respuesta de la pasarela: {url, ref} o {error}
+const c = $('Datos de la compra').item.json.c;
+const j = $json; let url = null, ref = null, error = j.error || null;
+if (!error && j.statusCode !== undefined) {
+  const b = j.body || {};
+  if (j.statusCode >= 200 && j.statusCode < 300) { url = b.init_point || b.url; ref = b.id; }
+  else error = 'HTTP ' + j.statusCode + ': ' + JSON.stringify(b.message || b.error || b).slice(0, 300);
+} else if (!error) { url = j.url; ref = j.ref; }
+if (!url && !error) error = 'La pasarela no devolvió un link de pago';
+return { json: { order_id: c.order_id, url, ref, error, phone_number_id: c.phone_number_id, access_token: c.access_token,
+  graph_version: c.graph_version, to: c.to, service: c.service.name, name: c.customer.name, number: c.number } };"""
+JLINK = r"""const j = $('Resultado de la pasarela').item.json;
+return { json: { phone_number_id: j.phone_number_id, access_token: j.access_token, graph_version: j.graph_version, to: j.to,
+  message: { type: 'interactive', interactive: { type: 'cta_url',
+    body: { text: 'Listo, ' + j.name + '. Este es tu link para pagar ' + j.service + ' (compra #' + j.number + '). Cuando se acredite te aviso por acá.' },
+    action: { name: 'cta_url', parameters: { display_text: 'Pagar ahora', url: j.url } } } } } };"""
+n = [
+ trig([0, 0]),
+ pg("Datos de la compra", "SELECT bot_journey_checkout_context($1::uuid) AS c;", "={{ [ $json.order_id ] }}", [220, 0]),
+ node("Según pasarela", "n8n-nodes-base.switch", 3.2, {"rules": {"values": [rule2("mercadopago"), rule2("stripe"), rule2("mock")]},
+      "options": {"fallbackOutput": "extra", "renameFallbackOutput": "sin_pasarela"}}, [440, 0]),
+ node("Mercado Pago: crear preferencia", "n8n-nodes-base.httpRequest", 4.2, {
+   "method": "POST", "url": "https://api.mercadopago.com/checkout/preferences",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.c.provider_token }}"}]},
+   "sendBody": True, "specifyBody": "json", "jsonBody": JMP_BODY,
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [700, -180]),
+ node("Stripe: crear checkout de pago", "n8n-nodes-base.httpRequest", 4.2, {
+   "method": "POST", "url": "https://api.stripe.com/v1/checkout/sessions",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.c.provider_token }}"}]},
+   "sendBody": True, "contentType": "form-urlencoded", "bodyParameters": {"parameters": [
+     {"name": "mode", "value": "payment"},
+     {"name": "line_items[0][price_data][currency]", "value": "={{ String($json.c.service.currency).toLowerCase() }}"},
+     {"name": "line_items[0][price_data][product_data][name]", "value": "={{ $json.c.service.name }}"},
+     {"name": "line_items[0][price_data][unit_amount]", "value": "={{ Math.round(Number($json.c.service.price) * 100) }}"},
+     {"name": "line_items[0][quantity]", "value": "1"},
+     {"name": "client_reference_id", "value": "={{ $json.c.order_id }}"},
+     {"name": "customer_email", "value": "={{ $json.c.customer.email }}"},
+     {"name": "metadata[tenant_id]", "value": "={{ $json.c.tenant_id }}"},
+     {"name": "metadata[service_order_id]", "value": "={{ $json.c.order_id }}"},
+     {"name": "success_url", "value": "={{ $json.c.provider_config.success_url || 'https://dmglobal.tech' }}"},
+     {"name": "cancel_url", "value": "={{ $json.c.provider_config.back_url || 'https://dmglobal.tech' }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [700, -40]),
+ code("Simulada: armar link", JMOCK, [700, 100], mode="runOnceForEachItem"),
+ code("Sin pasarela", NONE, [700, 240], mode="runOnceForEachItem"),
+ code("Resultado de la pasarela", JUNIFY, [960, 0], mode="runOnceForEachItem"),
+ iff("¿Hay link?", "={{ !!$json.url }}", BOOL_TRUE, [1180, 0]),
+ pg("Guardar link", "SELECT bot_journey_checkout_created($1::uuid, $2, $3) AS r;", "={{ [ $json.order_id, $json.url, $json.ref || '' ] }}", [1400, -80]),
+ code("Mensaje con link", JLINK, [1620, -80], mode="runOnceForEachItem"),
+ code("Mensaje de error", ERRMSG, [1400, 100], mode="runOnceForEachItem"),
+ call("CORE-02 Enviar WhatsApp", IDS["core02"], [1840, 0]),
+]
+wf("jcheckout", "JOURNEY-CHECKOUT Link de pago del servicio", n, conn(("Llamado desde otro workflow", "Datos de la compra"), ("Datos de la compra", "Según pasarela"),
+   ("Según pasarela", "Mercado Pago: crear preferencia", 0), ("Según pasarela", "Stripe: crear checkout de pago", 1),
+   ("Según pasarela", "Simulada: armar link", 2), ("Según pasarela", "Sin pasarela", 3),
+   ("Mercado Pago: crear preferencia", "Resultado de la pasarela"), ("Stripe: crear checkout de pago", "Resultado de la pasarela"),
+   ("Simulada: armar link", "Resultado de la pasarela"), ("Sin pasarela", "Resultado de la pasarela"),
+   ("Resultado de la pasarela", "¿Hay link?"), ("¿Hay link?", "Guardar link", 0), ("¿Hay link?", "Mensaje de error", 1),
+   ("Guardar link", "Mensaje con link"), ("Mensaje con link", "CORE-02 Enviar WhatsApp"), ("Mensaje de error", "CORE-02 Enviar WhatsApp")), [])
+
+# ---------- RECORRIDO: JOURNEY-PAGOS (confirmación del pago único) ----------
+JMP_IN = r"""// Mercado Pago avisa pagos (topic/type payment). Se vuelve a leer el pago con la API: no se confía en el aviso
+const q = $json.query || {}, b = $json.body || {};
+const type = b.type || b.topic || q.type || q.topic || '';
+const id = (b.data && b.data.id) || q['data.id'] || q.id || '';
+return { json: { tenant_id: q.tenant || '', type, id: String(id), relevant: type === 'payment' && !!id && !!q.tenant } };"""
+JMP_OK = r"""const b = $json.body || {}, src = $('MP: leer aviso de pago').item.json;
+const ok = $json.statusCode === 200 && b.status === 'approved' && !!b.external_reference;
+return { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-pay-' + b.id,
+  order_id: b.external_reference || '', ref: String(b.id || ''), payload: { id: b.id, status: b.status, amount: b.transaction_amount } } };"""
+JST_IN = r"""const q = $json.query || {}, b = $json.body || {};
+const obj = (b.data && b.data.object) || {};
+return { json: { tenant_id: q.tenant || '', id: obj.id || '', relevant: b.type === 'checkout.session.completed' && !!obj.id && !!q.tenant } };"""
+JST_OK = r"""const b = $json.body || {}, src = $('Stripe: leer evento de pago').item.json;
+const order = (b.metadata && b.metadata.service_order_id) || b.client_reference_id || '';
+const ok = $json.statusCode === 200 && b.mode === 'payment' && b.status === 'complete' && b.payment_status === 'paid' && !!order;
+return { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-' + b.id, order_id: order,
+  ref: b.payment_intent || b.id || '', payload: { id: b.id } } };"""
+JSPLIT = r"""// Un ítem por mensaje de WhatsApp que devolvió el motor
+return ($json.r.wa || []).map(m => ({ json: m }));"""
+JNOTI = r"""return { json: $('¿Primer pago?').item.json.r.notify };"""
+PAID_Q = "SELECT bot_journey_paid($1::uuid, $2, $3, $4::uuid, $5, $6::jsonb) AS r;"
+PAID_P = "={{ [ $json.tenant_id, $json.provider, $json.event_id, $json.order_id, $json.ref, JSON.stringify($json.payload || {}) ] }}"
+n = [
+ node("Mock: link abierto", "n8n-nodes-base.webhook", 2, {"httpMethod": "GET", "path": "servicio-mock", "responseMode": "responseNode", "options": {}}, [0, -200], webhookId=u("wh-servicio-mock")),
+ node("Pagar (simulado)", "n8n-nodes-base.postgres", 2.5, {"operation": "executeQuery",
+   "query": "SELECT bot_journey_paid(pi.tenant_id, 'mock', 'mock-' || $2, $2::uuid, 'mock-' || $2, '{}') AS r\nFROM payment_integrations pi WHERE pi.tenant_id = $1::uuid AND pi.provider = 'mock' AND pi.is_active;",
+   "options": {"queryReplacement": "={{ [ $json.query.tenant || '00000000-0000-0000-0000-000000000000', $json.query.ref || '00000000-0000-0000-0000-000000000000' ] }}"}},
+   [220, -200], credentials=PG, alwaysOutputData=True),
+ node("Responder (simulado)", "n8n-nodes-base.respondToWebhook", 1.1, {"respondWith": "text",
+   "responseBody": "={{ $json.r && $json.r.ok ? 'Pago simulado: la compra quedó pagada. Ya podés volver a WhatsApp.' : 'Link de pago simulado inválido.' }}", "options": {}}, [440, -200]),
+ node("Mercado Pago: aviso de pago", "n8n-nodes-base.webhook", 2, {"httpMethod": "POST", "path": "servicio-mercadopago", "options": {}}, [0, 20], webhookId=u("wh-servicio-mp")),
+ code("MP: leer aviso de pago", JMP_IN, [220, 20], mode="runOnceForEachItem"),
+ iff("¿Es un pago?", "={{ $json.relevant }}", BOOL_TRUE, [440, 20]),
+ pg("MP: token del cliente", TOKEN_Q, "={{ [ $json.tenant_id, $json.id, 'mercadopago' ] }}", [660, 20]),
+ node("MP: consultar pago", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.mercadopago.com/v1/payments/{{ $json.id }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [880, 20]),
+ code("MP: validar pago", JMP_OK, [1100, 20], mode="runOnceForEachItem"),
+ node("Stripe: evento de pago", "n8n-nodes-base.webhook", 2, {"httpMethod": "POST", "path": "servicio-stripe", "options": {}}, [0, 240], webhookId=u("wh-servicio-stripe")),
+ code("Stripe: leer evento de pago", JST_IN, [220, 240], mode="runOnceForEachItem"),
+ iff("¿Checkout pagado?", "={{ $json.relevant }}", BOOL_TRUE, [440, 240]),
+ pg("Stripe: clave del cliente", TOKEN_Q, "={{ [ $json.tenant_id, $json.id, 'stripe' ] }}", [660, 240]),
+ node("Stripe: consultar sesión", "n8n-nodes-base.httpRequest", 4.2, {
+   "url": "=https://api.stripe.com/v1/checkout/sessions/{{ $json.id }}",
+   "sendHeaders": True, "headerParameters": {"parameters": [{"name": "Authorization", "value": "=Bearer {{ $json.access_token }}"}]},
+   "options": {"response": {"response": {"fullResponse": True, "neverError": True}}, "timeout": 20000}}, [880, 240]),
+ code("Stripe: validar pago", JST_OK, [1100, 240], mode="runOnceForEachItem"),
+ iff("¿Pago válido?", "={{ $json.ok }}", BOOL_TRUE, [1320, 120]),
+ pg("Registrar pago", PAID_Q, PAID_P, [1540, 120]),
+ iff("¿Primer pago?", "={{ !!($json.r && $json.r.first_payment) }}", BOOL_TRUE, [1760, 0]),
+ code("Mensajes al cliente", JSPLIT, [1980, -120]),
+ call("CORE-02 Enviar WhatsApp", IDS["core02"], [2200, -120]),
+ call("CORE-04 Enviar email", IDS["core04"], [1980, 20]),
+ code("Aviso a ventas", JNOTI, [1980, 160], mode="runOnceForEachItem"),
+ call("RF02-NOTIFY Aviso a ventas", IDS["notify"], [2200, 160]),
+]
+wf("jpagos", "JOURNEY-PAGOS Confirmación de pago del servicio", n, conn(
+   ("Mock: link abierto", "Pagar (simulado)"), ("Pagar (simulado)", "Responder (simulado)"), ("Responder (simulado)", "¿Primer pago?"),
+   ("Mercado Pago: aviso de pago", "MP: leer aviso de pago"), ("MP: leer aviso de pago", "¿Es un pago?"), ("¿Es un pago?", "MP: token del cliente", 0),
+   ("MP: token del cliente", "MP: consultar pago"), ("MP: consultar pago", "MP: validar pago"), ("MP: validar pago", "¿Pago válido?"),
+   ("Stripe: evento de pago", "Stripe: leer evento de pago"), ("Stripe: leer evento de pago", "¿Checkout pagado?"), ("¿Checkout pagado?", "Stripe: clave del cliente", 0),
+   ("Stripe: clave del cliente", "Stripe: consultar sesión"), ("Stripe: consultar sesión", "Stripe: validar pago"), ("Stripe: validar pago", "¿Pago válido?"),
+   ("¿Pago válido?", "Registrar pago", 0), ("Registrar pago", "¿Primer pago?"),
+   ("¿Primer pago?", "Mensajes al cliente", 0), ("¿Primer pago?", "CORE-04 Enviar email", 0), ("¿Primer pago?", "Aviso a ventas", 0),
+   ("Mensajes al cliente", "CORE-02 Enviar WhatsApp"), ("Aviso a ventas", "RF02-NOTIFY Aviso a ventas")), [])
+
+# ---------- RECORRIDO: JOURNEY-POSTVENTA (encuesta de satisfacción) ----------
+n = [
+ sched("Cada 30 minutos", {"field": "minutes", "minutesInterval": 30}, [0, 0]), manual("Revisar ahora", [0, 160]),
+ pg1("Encuestas a enviar", "SELECT r FROM bot_journey_survey_due() r;", None, [240, 80], executeOnce=True),
+ code("Mensaje de encuesta", UNWRAP, [480, 80], mode="runOnceForEachItem"),
+ call("CORE-02 Enviar WhatsApp", IDS["core02"], [720, 80]),
+]
+wf("jpost", "JOURNEY-POSTVENTA Encuesta de satisfacción", n, conn(("Cada 30 minutos", "Encuestas a enviar"), ("Revisar ahora", "Encuestas a enviar"),
+   ("Encuestas a enviar", "Mensaje de encuesta"), ("Mensaje de encuesta", "CORE-02 Enviar WhatsApp")), [])
 
 
 print(sorted(os.listdir(OUT)))
