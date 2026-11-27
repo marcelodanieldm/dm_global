@@ -422,7 +422,11 @@
   {
    "parameters": {
     "source": "database",
-    "workflowId": "core02Enviar0001",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
     "options": {}
    },
    "id": "a21be9f1-6010-58ef-aec9-014160786fcc",

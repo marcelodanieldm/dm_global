@@ -206,7 +206,11 @@
   {
    "parameters": {
     "source": "database",
-    "workflowId": "core02Enviar0001",
+    "workflowId": {
+     "__rl": true,
+     "value": "core02Enviar0001",
+     "mode": "id"
+    },
     "options": {}
    },
    "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
@@ -234,7 +238,11 @@
   {
    "parameters": {
     "source": "database",
-    "workflowId": "core03Router0001",
+    "workflowId": {
+     "__rl": true,
+     "value": "core03Router0001",
+     "mode": "id"
+    },
     "options": {}
    },
    "id": "1f7e70d3-0482-512d-8e4c-fdfe1d2859fb",

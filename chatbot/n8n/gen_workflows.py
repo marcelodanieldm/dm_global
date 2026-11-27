@@ -19,7 +19,7 @@ def code(name, js, pos, mode=None):
     return node(name, "n8n-nodes-base.code", 2, p, pos)
 def trig(pos): return node("Llamado desde otro workflow", "n8n-nodes-base.executeWorkflowTrigger", 1, {}, pos)
 def call(name, wid, pos):
-    return node(name, "n8n-nodes-base.executeWorkflow", 1.1, {"source": "database", "workflowId": wid, "options": {}}, pos)
+    return node(name, "n8n-nodes-base.executeWorkflow", 1.1, {"source": "database", "workflowId": {"__rl": True, "value": wid, "mode": "id"}, "options": {}}, pos)
 def iff(name, left, op, pos, right=None):
     c = {"id": u(name + "c"), "leftValue": left, "operator": op}
     if right is not None: c["rightValue"] = right
