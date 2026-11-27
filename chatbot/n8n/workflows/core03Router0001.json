@@ -62,6 +62,52 @@
        },
        "renameOutput": true,
        "outputKey": "handover"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "1d43e7d2-8a3b-574b-8d7c-2f264793bd6f",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "booking_created",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "booking_created"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3aa370bf-a1e5-5336-b395-0e4ef3aafb74",
+          "leftValue": "={{ $json.type }}",
+          "rightValue": "checkout_requested",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "checkout_requested"
       }
      ]
     },
@@ -91,7 +137,7 @@
    "typeVersion": 1.1,
    "position": [
     480,
-    -100
+    -160
    ]
   },
   {
@@ -106,7 +152,37 @@
    "typeVersion": 1.1,
    "position": [
     480,
-    40
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "rf02Notify000001",
+    "options": {}
+   },
+   "id": "5288ac4a-363b-552a-8d4a-2e6192b36238",
+   "name": "RF02-NOTIFY (reserva)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    80
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "rf04Checkout0001",
+    "options": {}
+   },
+   "id": "cfad2e79-4fd8-518c-99ff-03a760a3ec78",
+   "name": "RF04-CHECKOUT Link de pago",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    480,
+    200
    ]
   },
   {
@@ -117,7 +193,7 @@
    "typeVersion": 1,
    "position": [
     480,
-    180
+    320
    ]
   }
  ],
@@ -145,6 +221,20 @@
     [
      {
       "node": "RF02-NOTIFY (derivación)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF02-NOTIFY (reserva)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "RF04-CHECKOUT Link de pago",
       "type": "main",
       "index": 0
      }

@@ -25,20 +25,20 @@ SELECT bot_sync_knowledge('00000000-0000-0000-0000-00000000b5b2', '[
 ]'::jsonb) AS sync_b;
 
 \echo ==== TC-01 keyword
-SELECT r->>'status' st, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000001","text":"Hola, ¿cuánto cuesta el diagnóstico?","message_id":"t-1"}') r) x;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000001","text":"Hola, ¿cuánto cuesta el diagnóstico?","message_id":"t-1"}')) AS r;
 \echo ==== TC-02 multimedia
-SELECT r->>'status' st, r->'messages' msgs FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000001","text":"me pasás el catálogo?","message_id":"t-2"}') r) x;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000001","text":"me pasás el catálogo?","message_id":"t-2"}')) AS r;
 \echo ==== TC-03 fallback + RF-02 lead flow
-SELECT r->>'status' st, r->'messages'->0->>'text' reply, r->'notify' notify FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"tienen sucursal en Marte?","message_id":"t-3"}') r) x;
-SELECT r->>'status' st, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Sí","message_id":"t-4"}') r) x;
-SELECT r->>'status' st, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Ana Pérez","message_id":"t-5"}') r) x;
-SELECT r->>'status' st, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Automatización con n8n","message_id":"t-6"}') r) x;
-SELECT r->>'status' st, r->'messages'->0->>'text' reply, r->'notify'->0->>'type' notify FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"si, confirmo","message_id":"t-7"}') r) x;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"tienen sucursal en Marte?","message_id":"t-3"}')) AS r;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Sí","message_id":"t-4"}')) AS r;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Ana Pérez","message_id":"t-5"}')) AS r;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"Automatización con n8n","message_id":"t-6"}')) AS r;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000002","text":"si, confirmo","message_id":"t-7"}')) AS r;
 SELECT name, product_interest, tag, phone FROM leads WHERE tenant_id = '00000000-0000-0000-0000-0000000000a1';
 \echo ==== asked for agent
-SELECT r->>'status' st, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000003","text":"quiero hablar con un asesor","message_id":"t-8"}') r) x;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000003","text":"quiero hablar con un asesor","message_id":"t-8"}')) AS r;
 \echo ==== TC-04 aislamiento (misma pregunta al tenant B)
-SELECT r->>'tenant_name' tenant, r->'messages'->0->>'text' reply FROM (SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_B","from":"5491100000001","text":"cuál es el precio?","message_id":"t-9"}') r) x;
+SELECT bot_preview(bot_handle_message('{"phone_number_id":"TEST_PNID_B","from":"5491100000001","text":"cuál es el precio?","message_id":"t-9"}')) AS r;
 \echo ==== numero desconocido y duplicado
 SELECT bot_handle_message('{"phone_number_id":"OTRO","from":"1","text":"hola","message_id":"t-10"}') r;
 SELECT bot_handle_message('{"phone_number_id":"TEST_PNID_A","from":"5491100000001","text":"precio","message_id":"t-1"}') r;

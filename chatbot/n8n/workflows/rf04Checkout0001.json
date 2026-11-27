@@ -1,0 +1,551 @@
+{
+ "id": "rf04Checkout0001",
+ "name": "RF04-CHECKOUT Link de pago",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "871c68d9-012a-5cc8-bcf0-5b337ec4f05a",
+   "name": "Llamado desde otro workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf04_checkout_context($1::uuid) AS c;",
+    "options": {
+     "queryReplacement": "={{ [ $json.subscription_id ] }}"
+    }
+   },
+   "id": "c86e408b-88d4-51da-b333-8427069cf668",
+   "name": "Datos del checkout",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    0
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "4bb3755f-f88a-5393-940b-789c75c0c2e3",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "mercadopago",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mercadopago"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "3188f3da-5375-5b42-bf9d-dd6c81829940",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "stripe",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "stripe"
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict"
+        },
+        "conditions": [
+         {
+          "id": "ef248ed7-2de8-5dfc-933b-94bf7de77759",
+          "leftValue": "={{ $json.c.provider }}",
+          "rightValue": "mock",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       },
+       "renameOutput": true,
+       "outputKey": "mock"
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "sin_pasarela"
+    }
+   },
+   "id": "596816e9-2b84-542c-8f05-dce07b18116e",
+   "name": "Según pasarela",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3.2,
+   "position": [
+    440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.mercadopago.com/preapproval",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.c.provider_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({\n  reason: $json.c.plan.name + ' · ' + $json.c.tenant_name,\n  external_reference: $json.c.subscription_id,\n  payer_email: $json.c.customer.email,\n  back_url: $json.c.provider_config.back_url || 'https://dmglobal.tech',\n  status: 'pending',\n  auto_recurring: {\n    frequency: $json.c.plan.interval === 'year' ? 12 : 1, frequency_type: 'months',\n    transaction_amount: Number($json.c.plan.price), currency_id: $json.c.plan.currency\n  }\n}) }}",
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "aa8be72c-b5ce-5344-ab43-ccddc8a8df7d",
+   "name": "Mercado Pago: crear preapproval",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    700,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.stripe.com/v1/checkout/sessions",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.c.provider_token }}"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "form-urlencoded",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "mode",
+       "value": "subscription"
+      },
+      {
+       "name": "line_items[0][price]",
+       "value": "={{ $json.c.plan.provider_price_id }}"
+      },
+      {
+       "name": "line_items[0][quantity]",
+       "value": "1"
+      },
+      {
+       "name": "client_reference_id",
+       "value": "={{ $json.c.subscription_id }}"
+      },
+      {
+       "name": "customer_email",
+       "value": "={{ $json.c.customer.email }}"
+      },
+      {
+       "name": "metadata[tenant_id]",
+       "value": "={{ $json.c.tenant_id }}"
+      },
+      {
+       "name": "subscription_data[metadata][subscription_id]",
+       "value": "={{ $json.c.subscription_id }}"
+      },
+      {
+       "name": "success_url",
+       "value": "={{ $json.c.provider_config.success_url || 'https://dmglobal.tech' }}"
+      },
+      {
+       "name": "cancel_url",
+       "value": "={{ $json.c.provider_config.back_url || 'https://dmglobal.tech' }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "d090dd7c-a118-53a8-a773-28dc6431c4ee",
+   "name": "Stripe: crear checkout session",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    700,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Pasarela simulada: el link activa la suscripción al abrirlo (solo para tenants con provider = mock)\nconst c = $json.c;\nreturn { json: { url: 'https://n8n.dmglobal.tech/webhook/pagos-mock?tenant=' + c.tenant_id + '&ref=' + c.subscription_id, ref: 'mock-' + c.subscription_id } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "0ff25895-0dca-5009-9e31-51d68ae66884",
+   "name": "Simulada: armar link",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    100
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "return { json: { error: 'El cliente no tiene pasarela de pago configurada (payment_integrations)' } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "80855c2a-cb43-573e-b7e1-a8d5f8a128e3",
+   "name": "Sin pasarela",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Normaliza la respuesta de la pasarela: {url, ref} o {error}\nconst c = $('Datos del checkout').item.json.c;\nconst j = $json; let url = null, ref = null, error = j.error || null;\nif (!error && j.statusCode !== undefined) {\n  const b = j.body || {};\n  if (j.statusCode >= 200 && j.statusCode < 300) { url = b.init_point || b.url; ref = b.id; }\n  else error = 'HTTP ' + j.statusCode + ': ' + JSON.stringify(b.message || b.error || b).slice(0, 300);\n} else if (!error) { url = j.url; ref = j.ref; }\nif (!url && !error) error = 'La pasarela no devolvió un link de pago';\nreturn { json: { subscription_id: c.subscription_id, url, ref, error, provider: c.provider,\n  phone_number_id: c.phone_number_id, access_token: c.access_token, graph_version: c.graph_version, to: c.to,\n  plan: c.plan.name, name: c.customer.name } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "821da17f-451a-56a5-acf6-179e9a9726f6",
+   "name": "Resultado pasarela",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    960,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "64e7dbf7-79ea-5c8b-8c48-811c6d617a7c",
+       "leftValue": "={{ !!$json.url }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "ff15f079-f475-5ae4-988f-6d1b0355f212",
+   "name": "¿Hay link?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1180,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf04_checkout_created($1::uuid, $2, $3) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.subscription_id, $json.url, $json.ref || '' ] }}"
+    }
+   },
+   "id": "0fb58c2d-e91a-537e-b086-422977e021d4",
+   "name": "Guardar link",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1400,
+    -80
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "jsCode": "const j = $('Resultado pasarela').item.json;\nreturn { json: { phone_number_id: j.phone_number_id, access_token: j.access_token, graph_version: j.graph_version, to: j.to,\n  message: { type: 'interactive', interactive: { type: 'cta_url',\n    body: { text: 'Listo, ' + j.name + '. Este es tu link para pagar el plan ' + j.plan + '. Cuando se acredite el pago te aviso por acá.' },\n    action: { name: 'cta_url', parameters: { display_text: 'Pagar ahora', url: j.url } } } } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "58113df3-c432-5be6-8164-1af8c2b07843",
+   "name": "Mensaje con link",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1620,
+    -80
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const j = $json;\nreturn { json: { phone_number_id: j.phone_number_id, access_token: j.access_token, graph_version: j.graph_version, to: j.to,\n  message: { type: 'text', text: 'Perdón, no pude generar el link de pago en este momento. Un asesor te va a escribir para completar el alta.' },\n  error: j.error } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "f5049779-92bf-59c8-9b55-0ea96bc10fe1",
+   "name": "Mensaje de error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1400,
+    100
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "core02Enviar0001",
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1840,
+    0
+   ]
+  }
+ ],
+ "connections": {
+  "Llamado desde otro workflow": {
+   "main": [
+    [
+     {
+      "node": "Datos del checkout",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Datos del checkout": {
+   "main": [
+    [
+     {
+      "node": "Según pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Según pasarela": {
+   "main": [
+    [
+     {
+      "node": "Mercado Pago: crear preapproval",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stripe: crear checkout session",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Simulada: armar link",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Sin pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mercado Pago: crear preapproval": {
+   "main": [
+    [
+     {
+      "node": "Resultado pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: crear checkout session": {
+   "main": [
+    [
+     {
+      "node": "Resultado pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Simulada: armar link": {
+   "main": [
+    [
+     {
+      "node": "Resultado pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Sin pasarela": {
+   "main": [
+    [
+     {
+      "node": "Resultado pasarela",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resultado pasarela": {
+   "main": [
+    [
+     {
+      "node": "¿Hay link?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Hay link?": {
+   "main": [
+    [
+     {
+      "node": "Guardar link",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Mensaje de error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Guardar link": {
+   "main": [
+    [
+     {
+      "node": "Mensaje con link",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje con link": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje de error": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}

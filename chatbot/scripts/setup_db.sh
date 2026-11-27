@@ -10,8 +10,14 @@ ALTER ROLE chatbot WITH LOGIN PASSWORD :'pw';
 SELECT 'CREATE DATABASE chatbot OWNER chatbot' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname='chatbot') \gexec
 SQL
 export PGUSER=chatbot PGPASSWORD="$CHATBOT_DB_PASSWORD"
-psql -d chatbot -v ON_ERROR_STOP=1 -q -f "$SQL_DIR/01_schema.sql" && echo SCHEMA_OK
+# Esquema y funciones: todos los archivos 0x-8x en orden (cada uno es idempotente)
+for f in "$SQL_DIR"/[0-8]*.sql; do
+  psql -d chatbot -v ON_ERROR_STOP=1 -q -f "$f" && echo "OK $(basename "$f")"
+done
+# Pruebas: archivos 9x (cada una crea sus datos de prueba y los borra al terminar)
 if [ "${RUN_TESTS:-1}" = "1" ]; then
-  psql -d chatbot -v ON_ERROR_STOP=1 -v verify="$VERIFY_TOKEN" -f "$SQL_DIR/90_test_fase1.sql"
+  for f in "$SQL_DIR"/9*.sql; do
+    psql -d chatbot -v ON_ERROR_STOP=1 -v verify="$VERIFY_TOKEN" -f "$f"
+  done
 fi
 echo ALL_DONE

@@ -1,0 +1,676 @@
+{
+ "id": "rf04Pagos0000001",
+ "name": "RF04-PAGOS Confirmación de pago",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "pagos-mock",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "402b37e2-e458-5045-a7f3-9bec1952e694",
+   "name": "Mock: link abierto",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    -200
+   ],
+   "webhookId": "642eb319-bb66-55d0-a0b5-ecd9d27da83f"
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf04_activate(pi.tenant_id, 'mock', 'mock-' || $2, $2::uuid, 'mock-' || $2, NULL, '{}') AS r\nFROM payment_integrations pi WHERE pi.tenant_id = $1::uuid AND pi.provider = 'mock' AND pi.is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.query.tenant || '00000000-0000-0000-0000-000000000000', $json.query.ref || '00000000-0000-0000-0000-000000000000' ] }}"
+    }
+   },
+   "id": "f21dba01-17d7-58e8-91dd-6f3f3706b303",
+   "name": "Activar (simulado)",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    220,
+    -200
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   },
+   "alwaysOutputData": true
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $json.r && $json.r.ok ? 'Pago simulado: la suscripción quedó activa. Ya podés volver a WhatsApp.' : 'Link de pago simulado inválido.' }}",
+    "options": {}
+   },
+   "id": "907f310a-0fca-5b37-8351-27af4bbe8008",
+   "name": "Responder (simulado)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    -200
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "pagos-mercadopago",
+    "options": {}
+   },
+   "id": "def6a225-914d-5bda-a239-988897c0293d",
+   "name": "Mercado Pago: aviso",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    20
+   ],
+   "webhookId": "16a34176-7d09-5669-8d0d-5ac5e512487a"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Notificación de Mercado Pago: solo interesan las de suscripción (preapproval)\nconst q = $json.query || {}, b = $json.body || {};\nconst type = b.type || b.topic || q.type || q.topic || '';\nconst id = (b.data && b.data.id) || q['data.id'] || q.id || '';\nreturn { json: { tenant_id: q.tenant || '', type, id: String(id), relevant: /preapproval/.test(type) && !!id && !!q.tenant } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "1f84d137-c3ab-5bc3-992e-2b27c8bc0033",
+   "name": "MP: leer aviso",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "77e312d6-9fd9-5ea0-9354-ebf55a9b660f",
+       "leftValue": "={{ $json.relevant }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "f72f2da8-5dd4-5127-b7b4-0ebbd9d84d21",
+   "name": "¿Es de suscripción?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT access_token, $2::text AS id, $1::text AS tenant_id FROM payment_integrations WHERE tenant_id = $1::uuid AND provider = $3 AND is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.id, 'mercadopago' ] }}"
+    }
+   },
+   "id": "2cede3e8-e24f-5a92-9ca1-47f5b9f7bec9",
+   "name": "MP: token del cliente",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    660,
+    20
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://api.mercadopago.com/preapproval/{{ $json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "f5e223e5-2ab1-56bd-8a63-c53645c9454d",
+   "name": "MP: consultar preapproval",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Solo una suscripción autorizada activa el alta\nconst b = $json.body || {}, src = $('MP: leer aviso').item.json;\nconst ok = $json.statusCode === 200 && b.status === 'authorized' && !!b.external_reference;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'mercadopago', event_id: 'mp-' + b.id + '-' + b.status,\n  subscription_id: b.external_reference || '', ref: b.id || '', period_end: b.next_payment_date || '', payload: b } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "001e98a0-7988-5151-a902-eebbbc2bbf77",
+   "name": "MP: validar estado",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "pagos-stripe",
+    "options": {}
+   },
+   "id": "577c7085-e935-5493-b794-8d33f423906c",
+   "name": "Stripe: evento",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    240
+   ],
+   "webhookId": "c9e612f5-a672-588f-98a9-dd109ae228bb"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Evento de Stripe: solo checkout.session.completed. No se confía en el cuerpo: se vuelve a leer la sesión con la API\nconst q = $json.query || {}, b = $json.body || {};\nconst obj = (b.data && b.data.object) || {};\nreturn { json: { tenant_id: q.tenant || '', type: b.type || '', id: obj.id || '',\n  relevant: b.type === 'checkout.session.completed' && !!obj.id && !!q.tenant } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "a6b4c34d-569c-5e3c-a660-ef7dd26dc634",
+   "name": "Stripe: leer evento",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "bbb4bcff-6c10-5a7e-b48e-e37261c97dab",
+       "leftValue": "={{ $json.relevant }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "9d4aef4d-42e3-59f8-b730-7dc48d9d5655",
+   "name": "¿Checkout completo?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT access_token, $2::text AS id, $1::text AS tenant_id FROM payment_integrations WHERE tenant_id = $1::uuid AND provider = $3 AND is_active;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.id, 'stripe' ] }}"
+    }
+   },
+   "id": "09fb8c6e-4061-58d0-978d-9a5305cf2ddb",
+   "name": "Stripe: clave del cliente",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    660,
+    240
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "=https://api.stripe.com/v1/checkout/sessions/{{ $json.id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $json.access_token }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "fullResponse": true,
+       "neverError": true
+      }
+     },
+     "timeout": 20000
+    }
+   },
+   "id": "69174caf-6d44-5bb1-91d0-988a0797e444",
+   "name": "Stripe: consultar sesión",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const b = $json.body || {}, src = $('Stripe: leer evento').item.json;\nconst ok = $json.statusCode === 200 && b.status === 'complete' && ['paid', 'no_payment_required'].includes(b.payment_status) && !!b.client_reference_id;\nreturn { json: { ok, tenant_id: src.tenant_id, provider: 'stripe', event_id: 'st-' + b.id,\n  subscription_id: b.client_reference_id || '', ref: b.subscription || b.id || '', period_end: '', payload: { id: b.id, subscription: b.subscription } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "8cf438ea-881c-5100-8cc5-35422502c413",
+   "name": "Stripe: validar pago",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    240
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "2a75159c-34ae-5100-8ea6-d5eebe167fcc",
+       "leftValue": "={{ $json.ok }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "2e6554eb-32af-5ab9-b92a-58fcda9a9cb3",
+   "name": "¿Pago válido?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1320,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "executeQuery",
+    "query": "SELECT bot_rf04_activate($1::uuid, $2, $3, $4::uuid, $5, NULLIF($6, '')::timestamptz, $7::jsonb) AS r;",
+    "options": {
+     "queryReplacement": "={{ [ $json.tenant_id, $json.provider, $json.event_id, $json.subscription_id, $json.ref, $json.period_end, JSON.stringify($json.payload || {}) ] }}"
+    }
+   },
+   "id": "cb86d8c1-390e-520a-819a-e0bf7bb8492b",
+   "name": "Activar suscripción",
+   "type": "n8n-nodes-base.postgres",
+   "typeVersion": 2.5,
+   "position": [
+    1540,
+    120
+   ],
+   "credentials": {
+    "postgres": {
+     "id": "pgChatbotCred01",
+     "name": "Postgres chatbot"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "8ae9cf46-66b7-559b-a88d-ae3f9ba2b14f",
+       "leftValue": "={{ !!($json.r && $json.r.first_activation) }}",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "b69aeacb-c187-5daa-93ce-02d2f9591eec",
+   "name": "¿Primera activación?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1760,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const r = $json.r;\nconst fin = r.current_period_end || null;\nreturn { json: { phone_number_id: r.phone_number_id, access_token: r.access_token, graph_version: r.graph_version, to: r.to,\n  message: { type: 'text', text: '🎉 ¡Pago recibido, ' + r.customer.name + '! Tu suscripción al plan ' + r.plan.name + ' de ' + r.tenant_name +\n    ' ya está activa. Te mandamos la bienvenida a ' + r.customer.email + '.' } } };",
+    "mode": "runOnceForEachItem"
+   },
+   "id": "b90f0051-decb-581a-bb08-c38992957e34",
+   "name": "Mensaje de bienvenida",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1980,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": "core02Enviar0001",
+    "options": {}
+   },
+   "id": "a21be9f1-6010-58ef-aec9-014160786fcc",
+   "name": "CORE-02 Enviar WhatsApp",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    2200,
+    0
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "52708b59-6d32-59c4-86fc-15ff6f0a3f77",
+   "name": "Email de bienvenida (pendiente SMTP)",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    2200,
+    140
+   ]
+  }
+ ],
+ "connections": {
+  "Mock: link abierto": {
+   "main": [
+    [
+     {
+      "node": "Activar (simulado)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Activar (simulado)": {
+   "main": [
+    [
+     {
+      "node": "Responder (simulado)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Responder (simulado)": {
+   "main": [
+    [
+     {
+      "node": "¿Primera activación?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mercado Pago: aviso": {
+   "main": [
+    [
+     {
+      "node": "MP: leer aviso",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: leer aviso": {
+   "main": [
+    [
+     {
+      "node": "¿Es de suscripción?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Es de suscripción?": {
+   "main": [
+    [
+     {
+      "node": "MP: token del cliente",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: token del cliente": {
+   "main": [
+    [
+     {
+      "node": "MP: consultar preapproval",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: consultar preapproval": {
+   "main": [
+    [
+     {
+      "node": "MP: validar estado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "MP: validar estado": {
+   "main": [
+    [
+     {
+      "node": "¿Pago válido?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: evento": {
+   "main": [
+    [
+     {
+      "node": "Stripe: leer evento",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: leer evento": {
+   "main": [
+    [
+     {
+      "node": "¿Checkout completo?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Checkout completo?": {
+   "main": [
+    [
+     {
+      "node": "Stripe: clave del cliente",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: clave del cliente": {
+   "main": [
+    [
+     {
+      "node": "Stripe: consultar sesión",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: consultar sesión": {
+   "main": [
+    [
+     {
+      "node": "Stripe: validar pago",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stripe: validar pago": {
+   "main": [
+    [
+     {
+      "node": "¿Pago válido?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Pago válido?": {
+   "main": [
+    [
+     {
+      "node": "Activar suscripción",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Activar suscripción": {
+   "main": [
+    [
+     {
+      "node": "¿Primera activación?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Primera activación?": {
+   "main": [
+    [
+     {
+      "node": "Mensaje de bienvenida",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Email de bienvenida (pendiente SMTP)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mensaje de bienvenida": {
+   "main": [
+    [
+     {
+      "node": "CORE-02 Enviar WhatsApp",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/Argentina/Buenos_Aires",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ },
+ "tags": []
+}
